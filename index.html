@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DAC Jazba - Control de Inventario</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase Module Loader -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signOut, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, deleteDoc, updateDoc, query, orderBy, limit, writeBatch, serverTimestamp, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        window.firebase = {
+            initializeApp,
+            getAuth, signOut, onAuthStateChanged, signInAnonymously, signInWithCustomToken,
+            getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, deleteDoc, updateDoc, query, orderBy, limit, writeBatch, serverTimestamp, where
+        };
+
+        window.dispatchEvent(new Event('firebase-ready'));
+    </script>
+    
+    <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://unpkg.com/read-excel-file@5.x/bundle/read-excel-file.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        .table-container { max-height: 350px; overflow-y: auto; }
+        thead th { position: sticky; top: 0; background: #f9fafb; z-index: 10; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <div id="root">
+        <div style="height: 100vh; display: flex; align-items: center; justify-content: center; color: #666;">
+            <div style="text-align: center;">
+                <div class="animate-spin h-8 w-8 border-4 border-blue-600 rounded-full border-t-transparent mx-auto mb-4"></div>
+                <p>Cargando sistema Jazba...</p>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Hashing para Password ---
+        async function hashPassword(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // --- Bootstrap ---
+        const bootstrap = async () => {
+            if (!window.firebase) await new Promise(resolve => window.addEventListener('firebase-ready', resolve));
+            const { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, deleteDoc, writeBatch, serverTimestamp, query, orderBy, limit } = window.firebase;
+
+            const firebaseConfig = JSON.parse(__firebase_config || '{}');
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'jazba-inventory-v2';
+
+            // --- Componentes UI ---
+            const Icon = ({ name, size = 20, className = "" }) => {
+                useEffect(() => { if(window.lucide) window.lucide.createIcons(); }, [name]);
+                return <i data-lucide={name} width={size} height={size} className={className}></i>;
+            };
+
+            const Button = ({ onClick, children, variant = "primary", className = "", disabled = false, type = "button" }) => {
+                const variants = {
+                    primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300",
+                    secondary: "bg-gray-200 text-gray-800 hover:bg-gray-300 disabled:bg-gray-100",
+                    danger: "bg-red-500 text-white hover:bg-red-600 disabled:bg-red-300",
+                    success: "bg-green-600 text-white hover:bg-green-700 disabled:bg-green-300",
+                    outline: "border-2 border-blue-600 text-blue-600 hover:bg-blue-50"
+                };
+                return <button type={type} onClick={onClick} className={`px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${variants[variant]} ${className}`} disabled={disabled}>{children}</button>;
+            };
+
+            const Card = ({ children, title, className = "" }) => (
+                <div className={`bg-white rounded-xl shadow-md p-6 ${className} fade-in`}>
+                    {title && <h2 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">{title}</h2>}
+                    {children}
+                </div>
+            );
+
+            // --- LOGIN ---
+            const LoginScreen = ({ onLoginAdmin, onStartScan }) => {
+                const [mode, setMode] = useState('menu'); // menu, admin
+                const [pass, setPass] = useState('');
+                const [loading, setLoading] = useState(false);
+
+                const checkPass = async (e) => {
+                    e.preventDefault();
+                    setLoading(true);
+                    try {
+                        const hash = await hashPassword(pass);
+                        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'system_settings', 'security');
+                        const snap = await getDoc(docRef);
+                        
+                        if (!snap.exists()) {
+                            await setDoc(docRef, { admin_hash: hash });
+                            alert("Contraseña creada exitosamente.");
+                            onLoginAdmin();
+                        } else if (snap.data().admin_hash === hash) {
+                            onLoginAdmin();
+                        } else {
+                            alert("Contraseña incorrecta. Si la olvidaste, usa el botón de restablecer.");
+                        }
+                    } catch (err) { alert(err.message); }
+                    setLoading(false);
+                };
+
+                const handleReset = async () => {
+                    if(!window.confirm("¿Estás seguro de restablecer el sistema? Esto eliminará la contraseña actual y te permitirá crear una nueva.")) return;
+                    try {
+                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'system_settings', 'security'));
+                        alert("Sistema restablecido. Ingresa una nueva contraseña para configurarla.");
+                        setPass('');
+                    } catch (e) { alert("Error al restablecer: " + e.message); }
+                };
+
+                if (mode === 'menu') return (
+                    <div className="flex flex-col items-center justify-center pt-10 gap-6">
+                        <h1 className="text-3xl font-bold text-slate-800">DAC Jazba Control</h1>
+                        <button onClick={onStartScan} className="w-full max-w-sm bg-white p-8 rounded-xl shadow-lg border-2 border-blue-600 flex flex-col items-center hover:bg-blue-50 transition-all">
+                            <div className="bg-blue-100 p-4 rounded-full mb-4"><Icon name="scan-barcode" size={48} className="text-blue-600"/></div>
+                            <span className="text-xl font-bold text-blue-900">Soy Asesor</span>
+                            <span className="text-blue-600">Iniciar Inventario</span>
+                        </button>
+                        <button onClick={() => setMode('admin')} className="text-gray-500 hover:text-gray-800 flex items-center gap-2"><Icon name="lock" size={16}/> Acceso Admin</button>
+                    </div>
+                );
+
+                return (
+                    <div className="flex justify-center pt-10">
+                        <Card className="w-full max-w-md">
+                            <button onClick={() => setMode('menu')} className="mb-4 text-gray-400"><Icon name="arrow-left"/></button>
+                            <h2 className="text-xl font-bold mb-4 text-center">Acceso Admin</h2>
+                            <form onSubmit={checkPass} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm text-gray-600 mb-1">Contraseña</label>
+                                    <input type="password" required autoFocus className="w-full p-2 border rounded" placeholder="Tu contraseña..." value={pass} onChange={e=>setPass(e.target.value)}/>
+                                </div>
+                                <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Verificando...' : 'Ingresar / Crear Clave'}</Button>
+                            </form>
+                            
+                            <div className="mt-6 pt-6 border-t">
+                                <button onClick={handleReset} className="text-xs text-red-400 hover:text-red-600 w-full text-center hover:underline">
+                                    Restablecer Sistema / Olvidé Contraseña
+                                </button>
+                            </div>
+                        </Card>
+                    </div>
+                );
+            };
+
+            // --- ADMIN DASHBOARD ---
+            const Dashboard = ({ advisors, stores, masterInventory, logout, refreshData }) => {
+                const [tab, setTab] = useState('inventory');
+                const [file, setFile] = useState(null);
+                const [uploadStore, setUploadStore] = useState('');
+                const [uploading, setUploading] = useState(false);
+                const [history, setHistory] = useState([]);
+
+                const tabNames = {
+                    inventory: 'Inventario',
+                    history: 'Historial',
+                    advisors: 'Asesores',
+                    stores: 'Tiendas'
+                };
+
+                useEffect(() => { if (tab === 'history') loadHistory(); }, [tab]);
+
+                const loadHistory = async () => {
+                    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'audit_records'), orderBy('timestamp', 'desc'), limit(28));
+                    const snap = await getDocs(q);
+                    setHistory(snap.docs.map(d => ({id:d.id, ...d.data()})));
+                };
+
+                const handleUpload = async () => {
+                    if (!file || !uploadStore) return alert("Selecciona archivo y tienda");
+                    setUploading(true);
+                    try {
+                        const rows = await readXlsxFile(file);
+                        const batch = writeBatch(db);
+                        let count = 0;
+                        for (let i = 1; i < rows.length; i++) {
+                            if (rows[i][0]) {
+                                const imei = String(rows[i][0]).trim();
+                                const model = rows[i][1] ? String(rows[i][1]).trim() : "Desconocido";
+                                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', imei);
+                                batch.set(ref, { imei, model, store: uploadStore, status: 'active', addedAt: serverTimestamp() });
+                                count++;
+                            }
+                        }
+                        await batch.commit();
+                        alert(`Cargados ${count} equipos a ${uploadStore}`);
+                        setFile(null);
+                        refreshData();
+                    } catch (e) { alert("Error: " + e.message); }
+                    setUploading(false);
+                };
+
+                const addItem = async (coll, field, val) => {
+                    if(val) { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', coll), { name: val }); refreshData(); }
+                };
+                const delItem = async (coll, id) => {
+                    if(confirm("¿Borrar?")) { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', coll, id)); refreshData(); }
+                };
+
+                const generatePDF = (record) => {
+                    const doc = new jspdf.jsPDF();
+                    doc.setFontSize(16);
+                    doc.text("Reporte Histórico - DAC Jazba", 14, 20);
+                    doc.setFontSize(10);
+                    doc.text(`Fecha: ${new Date(record.date).toLocaleString()}`, 14, 30);
+                    doc.text(`Tienda: ${record.storeName} | Asesor: ${record.advisorName}`, 14, 35);
+                    
+                    doc.setFillColor(240, 240, 240);
+                    doc.rect(14, 40, 180, 15, 'F');
+                    doc.text(`Escaneados: ${record.scannedCount} | Faltantes: ${record.missingItems?.length||0} | Traslados: ${record.transfersIn?.length||0}`, 20, 49);
+
+                    let currentY = 65;
+                    if (record.scannedItemsList && record.scannedItemsList.length > 0) {
+                        doc.setFontSize(12);
+                        doc.setTextColor(0, 100, 0);
+                        doc.text("1. Equipos Escaneados", 14, 60);
+                        doc.setTextColor(0, 0, 0);
+                        
+                        doc.autoTable({
+                            startY: 65,
+                            head: [['IMEI', 'Modelo', 'Estado']],
+                            body: record.scannedItemsList.map(s => [s.imei, s.model, s.status === 'TRANSFER' ? 'TRASLADO (ENT)' : s.status]),
+                            theme: 'striped',
+                            headStyles: { fillColor: [46, 204, 113] }
+                        });
+                        currentY = doc.lastAutoTable.finalY + 15;
+                    }
+
+                    if (record.missingItems && record.missingItems.length > 0) {
+                        doc.setFontSize(12);
+                        doc.setTextColor(200, 0, 0);
+                        doc.text("2. Equipos Faltantes", 14, currentY);
+                        doc.setTextColor(0, 0, 0);
+
+                        const missingRows = [];
+                        record.missingItems.forEach(i => missingRows.push([i.imei, i.model, i.status, i.description||'-']));
+                        
+                        doc.autoTable({ 
+                            startY: currentY + 5, 
+                            head: [['IMEI', 'Modelo', 'Motivo', 'Detalle']], 
+                            body: missingRows,
+                            theme: 'striped',
+                            headStyles: { fillColor: [231, 76, 60] }
+                        });
+                    }
+
+                    doc.save(`reporte_historico_${record.date}.pdf`);
+                };
+
+                return (
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm">
+                            <h2 className="text-lg font-bold">Panel Admin</h2>
+                            <Button variant="outline" onClick={logout}><Icon name="log-out" size={16}/> Salir</Button>
+                        </div>
+                        <div className="bg-white rounded-lg shadow p-4">
+                            <div className="flex border-b mb-4 overflow-x-auto">
+                                {Object.keys(tabNames).map(k => (
+                                    <button key={k} onClick={()=>setTab(k)} className={`px-4 py-2 ${tab===k?'border-b-2 border-blue-600 text-blue-600':'text-gray-500'}`}>
+                                        {tabNames[k]}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {tab === 'inventory' && (
+                                <div>
+                                    {stores.length === 0 ? (
+                                        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4 flex items-center gap-2">
+                                            <Icon name="alert-triangle" size={24} />
+                                            <div>
+                                                <p className="font-bold">¡Atención!</p>
+                                                <p className="text-sm">No puedes cargar inventario porque no existen tiendas. Ve a la pestaña "Tiendas" y crea al menos una.</p>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-200">
+                                            <h3 className="font-bold mb-2">Cargar Inventario a Tienda</h3>
+                                            <div className="flex flex-col md:flex-row gap-2">
+                                                <select className="p-2 border rounded" value={uploadStore} onChange={e=>setUploadStore(e.target.value)}>
+                                                    <option value="">Seleccionar Tienda...</option>
+                                                    {stores.map(s=> <option key={s.id} value={s.name}>{s.name}</option>)}
+                                                </select>
+                                                <input type="file" onChange={e=>setFile(e.target.files[0])} className="p-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-white file:text-blue-700 hover:file:bg-blue-50"/>
+                                                <Button onClick={handleUpload} disabled={uploading}>Subir</Button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="overflow-x-auto table-container">
+                                        <table className="min-w-full text-sm text-left">
+                                            <thead className="bg-gray-100 text-xs uppercase"><tr><th className="px-4 py-2">Tienda</th><th className="px-4 py-2">Modelo</th><th className="px-4 py-2">IMEI</th></tr></thead>
+                                            <tbody>
+                                                {masterInventory.map(i => (
+                                                    <tr key={i.imei} className="border-b">
+                                                        <td className="px-4 py-2 font-bold text-gray-600">{i.store || '-'}</td>
+                                                        <td className="px-4 py-2">{i.model}</td>
+                                                        <td className="px-4 py-2 font-mono">{i.imei}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            {tab === 'history' && (
+                                <div className="space-y-2">
+                                    {history.map(h => (
+                                        <div key={h.id} className="border p-3 rounded flex justify-between items-center">
+                                            <div>
+                                                <div className="font-bold text-sm">{new Date(h.date).toLocaleString()}</div>
+                                                <div className="text-xs text-gray-500">{h.storeName} - {h.advisorName}</div>
+                                                <div className="text-xs mt-1">
+                                                    <span className="text-green-600">Escaneados: {h.scannedCount}</span> | 
+                                                    <span className="text-red-500 ml-2">Faltantes: {h.missingItems?.length||0}</span>
+                                                </div>
+                                            </div>
+                                            <Button variant="outline" onClick={()=>generatePDF(h)}><Icon name="file-down" size={14}/></Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {(tab === 'advisors' || tab === 'stores') && (
+                                <div>
+                                    <form onSubmit={(e)=>{e.preventDefault(); addItem(tab, 'name', e.target.val.value); e.target.reset();}} className="flex gap-2 mb-4">
+                                        <input name="val" placeholder={`Nuevo ${tabNames[tab]}...`} className="border p-2 rounded flex-1"/>
+                                        <Button type="submit">Agregar</Button>
+                                    </form>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {(tab==='advisors'?advisors:stores).map(i=>(
+                                            <div key={i.id} className="p-2 border rounded flex justify-between bg-gray-50">
+                                                <span>{i.name}</span>
+                                                <button onClick={()=>delItem(tab, i.id)} className="text-red-500"><Icon name="trash-2" size={14}/></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            // --- SCANNER LOGIC ---
+            const Scanner = ({ advisors, stores, masterInventory, onBack, refreshData }) => {
+                const [step, setStep] = useState(1);
+                const [selAdv, setSelAdv] = useState('');
+                const [selStore, setSelStore] = useState('');
+                
+                // Using Ref for scanned items to allow immediate synchronous checks
+                const scannedRef = useRef(new Set());
+                const [scannedCount, setScannedCount] = useState(0); 
+                
+                const [scanLog, setScanLog] = useState([]); 
+                const [transfersIn, setTransfersIn] = useState([]); 
+                
+                const [input, setInput] = useState('');
+                const inputRef = useRef(null);
+                
+                const [missing, setMissing] = useState([]);
+
+                const handleScan = (code) => {
+                    const imei = code.trim();
+                    if(!imei) return;
+                    
+                    setScannedCount(prev => {
+                        if (scannedRef.current.has(imei)) {
+                            return prev;
+                        }
+                        
+                        const item = masterInventory.find(i => i.imei === imei);
+                        let status = 'OK';
+                        let detail = '';
+                        let isTransfer = false;
+
+                        if (!item) {
+                            status = 'UNKNOWN';
+                            detail = 'No existe en sistema';
+                        } else if (item.store !== selStore) {
+                            status = 'TRANSFER';
+                            detail = `Origen: ${item.store || 'Sin Asignar'}`;
+                            isTransfer = true;
+                        }
+
+                        const newItem = { 
+                            imei, 
+                            model: item ? item.model : 'DESCONOCIDO', 
+                            status, 
+                            detail,
+                            originStore: item ? item.store : null,
+                            time: new Date().toLocaleTimeString() 
+                        };
+
+                        setScanLog(prevLog => [newItem, ...prevLog]);
+                        if (isTransfer) {
+                            setTransfersIn(prevTrans => [...prevTrans, newItem]);
+                        }
+                        
+                        scannedRef.current.add(imei);
+                        return scannedRef.current.size;
+                    });
+                };
+
+                // FUNCIÓN DE ELIMINAR INMEDIATA
+                const removeScan = (imeiToDelete) => {
+                    // No window.confirm -> Eliminación inmediata
+                    
+                    // Remover del Set de referencia
+                    scannedRef.current.delete(imeiToDelete);
+                    setScannedCount(scannedRef.current.size);
+                    
+                    // Actualizar UI
+                    setScanLog(prev => prev.filter(item => item.imei !== imeiToDelete));
+                    setTransfersIn(prev => prev.filter(item => item.imei !== imeiToDelete));
+
+                    // Refocus input
+                    if(inputRef.current) inputRef.current.focus();
+                };
+
+                const finish = () => {
+                    const missingList = masterInventory.filter(i => i.store === selStore && !scannedRef.current.has(i.imei));
+                    setMissing(missingList.map(i => ({...i, status: 'missing', reason: '', desc: ''})));
+                    setStep(3);
+                };
+
+                const saveAndExport = async () => {
+                    try {
+                        const batch = writeBatch(db);
+                        const dateIso = new Date().toISOString();
+
+                        const scannedItemsList = scanLog.map(s => ({
+                            imei: s.imei, model: s.model, status: s.status, originStore: s.originStore || null
+                        }));
+
+                        const auditRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'audit_records'));
+                        const record = {
+                            date: dateIso,
+                            timestamp: serverTimestamp(),
+                            advisorName: selAdv,
+                            storeName: selStore,
+                            scannedCount: scannedRef.current.size,
+                            scannedItemsList: scannedItemsList, 
+                            missingItems: missing.map(m => ({
+                                imei: m.imei, model: m.model, status: m.status, description: m.desc
+                            })),
+                            transfersIn: transfersIn.map(t => ({
+                                imei: t.imei, model: t.model, originStore: t.originStore
+                            }))
+                        };
+                        batch.set(auditRef, record);
+
+                        transfersIn.forEach(t => {
+                            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', t.imei);
+                            batch.update(ref, { store: selStore }); 
+                        });
+
+                        missing.forEach(m => {
+                            if (['vendido', 'traslado'].includes(m.status)) {
+                                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', m.imei);
+                                batch.delete(ref);
+                            }
+                        });
+
+                        await batch.commit();
+                        
+                        const pdf = new jspdf.jsPDF();
+                        pdf.setFontSize(18);
+                        pdf.text("Reporte Final - Inventario DAC Jazba", 14, 20);
+                        pdf.setFontSize(10);
+                        pdf.text(`Tienda: ${selStore}`, 14, 30);
+                        pdf.text(`Asesor: ${selAdv}`, 14, 35);
+                        pdf.text(`Fecha: ${new Date().toLocaleString()}`, 14, 40);
+
+                        pdf.setFillColor(240, 240, 240);
+                        pdf.rect(14, 45, 180, 20, 'F');
+                        pdf.setFontSize(11);
+                        pdf.setTextColor(0, 100, 0);
+                        pdf.text(`Equipos Encontrados: ${scannedRef.current.size}`, 20, 53);
+                        pdf.setTextColor(200, 0, 0);
+                        pdf.text(`Faltantes: ${missing.length}`, 20, 60);
+
+                        if(transfersIn.length > 0) {
+                            pdf.setTextColor(0, 0, 200);
+                            pdf.text(`Traslados (Entradas): ${transfersIn.length}`, 100, 53);
+                        }
+                        
+                        pdf.setTextColor(0, 0, 0);
+
+                        pdf.setFontSize(12);
+                        pdf.setTextColor(0, 100, 0);
+                        pdf.text("1. Equipos Escaneados", 14, 75);
+                        pdf.setTextColor(0, 0, 0);
+
+                        const scannedRows = scanLog.map(s => [s.imei, s.model, s.status === 'TRANSFER' ? 'TRASLADO (ENTRADA)' : s.status]);
+                        
+                        pdf.autoTable({ 
+                            startY: 80, 
+                            head: [['IMEI', 'Modelo', 'Estado']], 
+                            body: scannedRows,
+                            theme: 'striped',
+                            headStyles: { fillColor: [46, 204, 113] }
+                        });
+
+                        let currentY = pdf.lastAutoTable.finalY + 15;
+                        
+                        if(missing.length > 0) {
+                            pdf.setFontSize(12);
+                            pdf.setTextColor(200, 0, 0);
+                            pdf.text("2. Equipos Faltantes / Novedades", 14, currentY);
+                            pdf.setTextColor(0, 0, 0);
+
+                            const missingRows = [];
+                            missing.forEach(m => missingRows.push([m.imei, m.model, m.status, m.desc || '-']));
+                            
+                            pdf.autoTable({ 
+                                startY: currentY + 5, 
+                                head: [['IMEI', 'Modelo', 'Motivo', 'Detalle']], 
+                                body: missingRows,
+                                theme: 'striped',
+                                headStyles: { fillColor: [231, 76, 60] }
+                            });
+                        }
+                        
+                        pdf.save(`Inventario_${selStore}_${dateIso}.pdf`);
+
+                        alert("Guardado y PDF generado.");
+                        refreshData();
+                        onBack();
+
+                    } catch (e) { alert("Error: " + e.message); }
+                };
+
+                if (step === 1) return (
+                    <Card title="Configuración Inicial" className="max-w-md mx-auto mt-10">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700">Tienda Actual</label>
+                                <select className="w-full p-2 border rounded mt-1" value={selStore} onChange={e=>setSelStore(e.target.value)}>
+                                    <option value="">Seleccione...</option>
+                                    {stores.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700">Asesor</label>
+                                <select className="w-full p-2 border rounded mt-1" value={selAdv} onChange={e=>setSelAdv(e.target.value)}>
+                                    <option value="">Seleccione...</option>
+                                    {advisors.map(a=><option key={a.id} value={a.name}>{a.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="flex gap-2 mt-4">
+                                <Button variant="secondary" onClick={onBack} className="flex-1">Cancelar</Button>
+                                <Button onClick={()=>setStep(2)} disabled={!selStore || !selAdv} className="flex-1">Iniciar</Button>
+                            </div>
+                        </div>
+                    </Card>
+                );
+
+                if (step === 2) return (
+                    <div className="max-w-2xl mx-auto space-y-4">
+                        <div className="bg-white p-4 rounded shadow flex justify-between items-center">
+                            <div><h2 className="font-bold text-lg">{selStore}</h2><p className="text-xs text-gray-500">{selAdv}</p></div>
+                            <div className="text-right"><div className="text-2xl font-bold text-blue-600">{scannedCount}</div><div className="text-xs text-gray-400">Escaneados</div></div>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button onClick={onBack} className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded flex items-center gap-2">
+                                <Icon name="arrow-left" size={16} /> Atrás
+                            </button>
+                            <form onSubmit={e=>{e.preventDefault(); handleScan(input); setInput('');}} className="relative flex-1">
+                                <input ref={inputRef} autoFocus value={input} onChange={e=>setInput(e.target.value)} className="w-full p-2 pl-10 border-2 border-blue-500 rounded text-lg shadow-sm" placeholder="Escanear IMEI..."/>
+                                <div className="absolute left-3 top-3 text-gray-400"><Icon name="barcode"/></div>
+                            </form>
+                        </div>
+
+                        <div className="bg-white rounded shadow overflow-hidden table-container">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gray-100 text-xs uppercase"><tr><th className="p-3 text-left">Modelo</th><th className="p-3 text-left">IMEI</th><th className="p-3 text-left">Estado</th><th className="p-3"></th></tr></thead>
+                                <tbody>
+                                    {scanLog.map((l) => (
+                                        <tr key={l.imei} className={`border-b ${l.status==='TRANSFER'?'bg-yellow-50':''}`}>
+                                            <td className="p-3 font-bold">{l.model}</td>
+                                            <td className="p-3 font-mono text-gray-600">{l.imei}</td>
+                                            <td className="p-3">
+                                                {l.status==='OK' && <span className="text-green-600 font-bold">OK</span>}
+                                                {l.status==='TRANSFER' && (
+                                                    <div className="text-yellow-700 text-xs">
+                                                        <span className="font-bold block">⚠️ DE OTRA TIENDA</span>
+                                                        {l.detail}
+                                                    </div>
+                                                )}
+                                                {l.status==='UNKNOWN' && <span className="text-red-500">Nuevo/Error</span>}
+                                            </td>
+                                            <td className="p-3 text-right">
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => removeScan(l.imei)} 
+                                                    className="bg-red-500 text-white hover:bg-red-600 px-3 py-1 rounded text-xs font-bold shadow"
+                                                >
+                                                    Eliminar
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {scanLog.length===0 && <tr><td colSpan="4" className="p-8 text-center text-gray-400">Listo para escanear...</td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <Button onClick={finish} className="w-full py-3 text-lg">Finalizar Revisión</Button>
+                    </div>
+                );
+
+                if (step === 3) return (
+                    <div className="max-w-3xl mx-auto pb-20">
+                        <Card title="Resultados y Faltantes">
+                            {missing.length === 0 ? (
+                                <div className="text-center py-8 bg-green-50 rounded text-green-700 font-bold">¡Todo cuadra perfecto! Sin faltantes.</div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <p className="text-sm text-gray-500">Los siguientes equipos figuran en <strong>{selStore}</strong> pero no fueron escaneados:</p>
+                                    {missing.map((m, i) => (
+                                        <div key={m.imei} className="border p-3 rounded flex flex-col md:flex-row gap-2 bg-white shadow-sm">
+                                            <div className="flex-1">
+                                                <div className="font-bold text-red-600">{m.model}</div>
+                                                <div className="font-mono text-xs">{m.imei}</div>
+                                            </div>
+                                            <div className="flex-1">
+                                                <select className="w-full border p-2 rounded bg-gray-50" value={m.status} onChange={e=>{
+                                                    const list = [...missing]; list[i].status = e.target.value; setMissing(list);
+                                                }}>
+                                                    <option value="missing">Seleccionar Motivo...</option>
+                                                    <option value="vendido">Vendido</option>
+                                                    <option value="traslado">Traslado (Salida)</option>
+                                                    <option value="otro">Otro</option>
+                                                </select>
+                                            </div>
+                                            <div className="flex-1">
+                                                <input placeholder="Observación..." className="w-full border p-2 rounded" value={m.desc} onChange={e=>{
+                                                     const list = [...missing]; list[i].desc = e.target.value; setMissing(list);
+                                                }}/>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            
+                            {transfersIn.length > 0 && (
+                                <div className="mt-6 p-4 bg-yellow-50 rounded border border-yellow-200">
+                                    <h3 className="font-bold text-yellow-800">Traslados Detectados (Entradas)</h3>
+                                    <p className="text-sm text-yellow-700 mb-2">Se actualizarán {transfersIn.length} equipos para pertenecer a {selStore}:</p>
+                                    <ul className="list-disc pl-5 text-xs text-yellow-800">
+                                        {transfersIn.map(t => <li key={t.imei}>{t.model} (Origen: {t.originStore})</li>)}
+                                    </ul>
+                                </div>
+                            )}
+
+                            <div className="flex gap-2 mt-6">
+                                <Button variant="secondary" onClick={()=>setStep(2)}>Volver</Button>
+                                <Button variant="success" onClick={saveAndExport} className="flex-1">Guardar y Exportar PDF</Button>
+                            </div>
+                        </Card>
+                    </div>
+                );
+            };
+
+            const App = () => {
+                const [authReady, setAuthReady] = useState(false);
+                const [user, setUser] = useState(null);
+                const [view, setView] = useState('login');
+                const [data, setData] = useState({advisors:[], stores:[], inventory:[]});
+
+                useEffect(() => {
+                    const initAuth = async () => {
+                        try {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                            setAuthReady(true);
+                        } catch (e) {
+                            console.error("Auth failed", e);
+                            setAuthReady(true);
+                        }
+                    };
+
+                    const sub = onAuthStateChanged(auth, u => {
+                        if (u) setUser(u);
+                        else setUser(null);
+                    });
+                    
+                    initAuth();
+                    return () => sub();
+                }, []);
+
+                useEffect(() => {
+                    if(authReady && user) refresh();
+                }, [authReady, user]);
+
+                const refresh = async () => {
+                    try {
+                        const [adv, sto, inv] = await Promise.all([
+                            getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'advisors')),
+                            getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'stores')),
+                            getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'inventory_master'))
+                        ]);
+                        setData({
+                            advisors: adv.docs.map(d=>({id:d.id, ...d.data()})),
+                            stores: sto.docs.map(d=>({id:d.id, ...d.data()})),
+                            inventory: inv.docs.map(d=>({id:d.id, ...d.data()}))
+                        });
+                    } catch(e) { console.error("Data load error", e); }
+                };
+
+                if(!authReady) return <div className="flex h-screen items-center justify-center text-gray-500">Conectando...</div>;
+
+                return (
+                    <div className="min-h-screen pb-10 max-w-5xl mx-auto p-4">
+                        <nav className="flex justify-between items-center mb-6 border-b pb-4">
+                            <div className="flex items-center gap-2 font-bold text-xl text-slate-800"><Icon name="box"/> DAC JAZBA</div>
+                        </nav>
+                        
+                        {view === 'login' && <LoginScreen onLoginAdmin={()=>{setView('dashboard');}} onStartScan={()=>setView('scan')} />}
+                        
+                        {view === 'dashboard' && 
+                            <Dashboard advisors={data.advisors} stores={data.stores} masterInventory={data.inventory} logout={()=>{setView('login');}} refreshData={refresh}/>
+                        }
+
+                        {view === 'scan' && 
+                            <Scanner advisors={data.advisors} stores={data.stores} masterInventory={data.inventory} onBack={()=>{setView('login'); refresh();}} refreshData={refresh}/>
+                        }
+                    </div>
+                );
+            };
+
+            ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+        };
+        bootstrap();
+    </script>
+</body>
+</html>
