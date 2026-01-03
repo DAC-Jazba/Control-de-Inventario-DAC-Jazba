@@ -44,11 +44,18 @@
 </head>
 <body>
     <div id="root">
-        <div style="height: 100vh; display: flex; align-items: center; justify-content: center; color: #666;">
+        <div style="height: 100vh; display: flex; align-items: center; justify-content: center; color: #666; flex-direction: column;">
             <div style="text-align: center;">
                 <div class="animate-spin h-8 w-8 border-4 border-blue-600 rounded-full border-t-transparent mx-auto mb-4"></div>
                 <p>Iniciando sistema Jazba...</p>
-                <p id="config-warning" style="display:none; color: red; font-size: 0.8rem; margin-top: 10px;">Falta configuración de Firebase</p>
+            </div>
+            <!-- Mensaje de error amigable si falta configuración -->
+            <div id="config-warning" style="display:none; margin-top: 20px; padding: 20px; background: #fee2e2; color: #b91c1c; border-radius: 8px; max-width: 400px; text-align: center; border: 1px solid #f87171;">
+                <strong>⚠️ Falta configuración de Base de Datos</strong><br><br>
+                Para usar este sistema en GitHub/Internet:<br>
+                1. Abre este archivo HTML en un editor de texto.<br>
+                2. Busca la línea 80.<br>
+                3. Reemplaza los datos de ejemplo con los de tu proyecto Firebase.
             </div>
         </div>
     </div>
@@ -68,38 +75,41 @@
             if (!window.firebase) await new Promise(resolve => window.addEventListener('firebase-ready', resolve));
             const { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, deleteDoc, writeBatch, serverTimestamp, query, orderBy, limit, where } = window.firebase;
 
-            // --- CONFIGURACIÓN FIREBASE ---
-            let firebaseConfig;
-            try {
-                if (typeof __firebase_config !== 'undefined') {
-                    firebaseConfig = JSON.parse(__firebase_config); 
-                } else {
-                    throw new Error("No config");
-                }
-            } catch (e) {
-                console.warn("Usando configuración manual.");
-                firebaseConfig = {
-                    apiKey: "PEGAR_TU_API_KEY_AQUI",
-                    authDomain: "tu-proyecto.firebaseapp.com",
-                    projectId: "tu-proyecto",
-                    storageBucket: "tu-proyecto.appspot.com",
-                    messagingSenderId: "123456789",
-                    appId: "1:123456789:web:abcdef"
-                };
-                
-                if (firebaseConfig.apiKey === "PEGAR_TU_API_KEY_AQUI") {
-                    document.getElementById('config-warning').style.display = 'block';
-                    document.getElementById('config-warning').innerText = "⚠️ ERROR: Debes editar el archivo HTML y poner tus credenciales de Firebase en la línea 80.";
-                    return; 
-                }
+            // ==========================================================================================
+            // --- ZONA DE EDICIÓN: PEGA TUS CREDENCIALES AQUÍ ---
+            // Si estás viendo esto en GitHub y te sale error, reemplaza los valores de abajo 
+            // con los que te da Firebase Console -> Configuración del Proyecto -> General -> Tus apps
+            // ==========================================================================================
+            
+            let firebaseConfig = {
+  apiKey: "AIzaSyAoQV-Td9bA2cDGo2cNYGYhfrZdlF9U8wE",
+  authDomain: "control-inventario-dac-jazba.firebaseapp.com",
+  projectId: "control-inventario-dac-jazba",
+  storageBucket: "control-inventario-dac-jazba.firebasestorage.app",
+  messagingSenderId: "81783414754",
+  appId: "1:81783414754:web:2bb8e712f867375c8863bb"
+};
+
+            // Detectar entorno de prueba (No borrar esto, es para que funcione en el chat)
+            if (typeof __firebase_config !== 'undefined') {
+                firebaseConfig = JSON.parse(__firebase_config); 
             }
+            
+            // Validación para avisarte si olvidaste poner las claves
+            if (firebaseConfig.apiKey === "PEGAR_TU_API_KEY_AQUI" && typeof __firebase_config === 'undefined') {
+                document.querySelector('.animate-spin').style.display = 'none';
+                document.getElementById('config-warning').style.display = 'block';
+                return; // Detiene la app para evitar errores de consola
+            }
+            // ==========================================================================================
 
             const app = initializeApp(firebaseConfig);
             const auth = getAuth(app);
             const db = getFirestore(app);
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'jazba-inventory-v2';
+            // Usamos un ID fijo o dinámico según el entorno
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'jazba-inventory-prod';
 
-            // --- Componente Icono INTEGRADO (Sin librerías externas) ---
+            // --- Componente Icono INTEGRADO (Sin librerías externas para máxima velocidad) ---
             const Icon = ({ name, size = 20, className = "" }) => {
                 const svgs = {
                     'box': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>,
@@ -136,7 +146,7 @@
 
             // --- LOGIN ---
             const LoginScreen = ({ onLoginAdmin, onStartScan }) => {
-                const [mode, setMode] = useState('menu'); // menu, admin
+                const [mode, setMode] = useState('menu'); 
                 const [pass, setPass] = useState('');
                 const [loading, setLoading] = useState(false);
                 const [resetConfirm, setResetConfirm] = useState(false);
@@ -216,7 +226,6 @@
                 const [history, setHistory] = useState([]);
                 const [lastUpload, setLastUpload] = useState(null);
                 
-                // Estados para confirmación sin bloqueo
                 const [confirmUndo, setConfirmUndo] = useState(false);
                 const [confirmDeleteId, setConfirmDeleteId] = useState(null); 
                 const [deletingId, setDeletingId] = useState(null); 
