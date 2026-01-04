@@ -29,13 +29,21 @@
     </script>
     
     <!-- Libraries -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     <script src="https://unpkg.com/read-excel-file@5.x/bundle/read-excel-file.min.js"></script>
+    <!-- Librería para EXPORTAR Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
-        .table-container { max-height: 350px; overflow-y: auto; }
+        .table-container { 
+            max-height: 400px; 
+            overflow-y: auto; 
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+        }
         thead th { position: sticky; top: 0; background: #f9fafb; z-index: 10; }
         .fade-in { animation: fadeIn 0.3s ease-in; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -55,14 +63,12 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- Hashing para Password ---
         async function hashPassword(message) {
             const msgBuffer = new TextEncoder().encode(message);
             const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
             return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
-        // --- Bootstrap ---
         const bootstrap = async () => {
             if (!window.firebase) await new Promise(resolve => window.addEventListener('firebase-ready', resolve));
             const { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, deleteDoc, writeBatch, serverTimestamp, query, orderBy, limit, where } = window.firebase;
@@ -98,7 +104,6 @@
             const db = getFirestore(app);
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'jazba-inventory-v2';
 
-            // --- Componente Icono INTEGRADO ---
             const Icon = ({ name, size = 20, className = "" }) => {
                 const svgs = {
                     'box': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>,
@@ -110,7 +115,8 @@
                     'undo-2': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>,
                     'file-down': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>,
                     'alert-triangle': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
-                    'barcode': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M17 5v14"/><path d="M21 5v14"/></svg>
+                    'barcode': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M17 5v14"/><path d="M21 5v14"/></svg>,
+                    'download': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 };
                 return svgs[name] || null;
             };
@@ -121,7 +127,8 @@
                     secondary: "bg-gray-200 text-gray-800 hover:bg-gray-300 disabled:bg-gray-100",
                     danger: "bg-red-500 text-white hover:bg-red-600 disabled:bg-red-300",
                     success: "bg-green-600 text-white hover:bg-green-700 disabled:bg-green-300",
-                    outline: "border-2 border-blue-600 text-blue-600 hover:bg-blue-50"
+                    outline: "border-2 border-blue-600 text-blue-600 hover:bg-blue-50",
+                    successOutline: "border-2 border-green-600 text-green-600 hover:bg-green-50"
                 };
                 return <button type={type} onClick={onClick} className={`px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors ${variants[variant]} ${className}`} disabled={disabled}>{children}</button>;
             };
@@ -135,7 +142,7 @@
 
             // --- LOGIN ---
             const LoginScreen = ({ onLoginAdmin, onStartScan }) => {
-                const [mode, setMode] = useState('menu'); // menu, admin
+                const [mode, setMode] = useState('menu'); 
                 const [pass, setPass] = useState('');
                 const [loading, setLoading] = useState(false);
                 const [resetConfirm, setResetConfirm] = useState(false);
@@ -238,6 +245,30 @@
                     const snap = await getDocs(q);
                     if (!snap.empty) setLastUpload({ id: snap.docs[0].id, ...snap.docs[0].data() });
                     else setLastUpload(null);
+                };
+
+                // --- EXPORTAR EXCEL ---
+                const handleExportExcel = () => {
+                    if (!masterInventory || masterInventory.length === 0) {
+                        alert("No hay datos para exportar.");
+                        return;
+                    }
+                    
+                    const wb = XLSX.utils.book_new();
+                    const wsData = [
+                        ["IMEI", "Modelo", "Tienda", "Estado", "Fecha Registro"], // Encabezados
+                        ...masterInventory.map(item => [
+                            item.imei,
+                            item.model,
+                            item.store,
+                            item.status === 'active' ? 'Activo' : item.status,
+                            item.addedAt ? new Date(item.addedAt.seconds * 1000).toLocaleDateString() : '-'
+                        ])
+                    ];
+                    
+                    const ws = XLSX.utils.aoa_to_sheet(wsData);
+                    XLSX.utils.book_append_sheet(wb, ws, "Inventario Completo");
+                    XLSX.writeFile(wb, `Inventario_Jazba_${new Date().toISOString().slice(0,10)}.xlsx`);
                 };
 
                 const handleUpload = async () => {
@@ -408,7 +439,7 @@
                         doc.autoTable({
                             startY: 65,
                             head: [['IMEI', 'Modelo', 'Estado']],
-                            body: record.scannedItemsList.map(s => [s.imei, s.model, s.status === 'TRANSFER' ? 'TRASLADO (ENT)' : s.status]),
+                            body: record.scannedItemsList.map(s => [s.imei, s.model, s.status === 'TRASLADO' ? 'TRASLADO (ENT)' : s.status]),
                             theme: 'striped',
                             headStyles: { fillColor: [46, 204, 113] }
                         });
@@ -452,7 +483,12 @@
                                         </div>
                                     ) : (
                                         <div className="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-200">
-                                            <h3 className="font-bold mb-2">Cargar Inventario</h3>
+                                            <div className="flex justify-between items-start mb-4">
+                                                <h3 className="font-bold">Gestión de Inventario</h3>
+                                                <Button onClick={handleExportExcel} variant="successOutline" className="text-sm py-1">
+                                                    <Icon name="download" size={16}/> Exportar Excel
+                                                </Button>
+                                            </div>
                                             <div className="flex flex-col md:flex-row gap-2">
                                                 <select className="p-2 border rounded" value={uploadStore} onChange={e=>setUploadStore(e.target.value)}>
                                                     <option value="">Seleccionar Tienda...</option>
@@ -585,8 +621,14 @@
                         const item = masterInventory.find(i => i.imei === imei);
                         let status = 'OK', detail = '', isTransfer = false;
 
-                        if (!item) { status = 'UNKNOWN'; detail = 'No existe en sistema'; }
-                        else if (item.store !== selStore) { status = 'TRANSFER'; detail = `Origen: ${item.store}`; isTransfer = true; }
+                        if (!item) { 
+                            status = 'NO REGISTRADO'; 
+                            detail = 'No existe en sistema'; 
+                        } else if (item.store !== selStore) { 
+                            status = 'TRASLADO'; 
+                            detail = `Origen: ${item.store} - Trasladar`; 
+                            isTransfer = true; 
+                        }
 
                         const newItem = { imei, model: item ? item.model : 'DESCONOCIDO', status, detail, originStore: item ? item.store : null };
 
@@ -617,6 +659,15 @@
                 };
 
                 const saveAndExport = async () => {
+                    // Validación: Verificar que todos los faltantes tengan motivo seleccionado
+                    const pendingReasons = missing.some(m => m.status === 'missing');
+                    if (pendingReasons) {
+                        alert("⚠️ No se puede guardar: Hay equipos faltantes sin motivo seleccionado. Por favor justifique todos los faltantes.");
+                        return;
+                    }
+
+                    if(!window.confirm("¿Estás seguro de finalizar? Al guardar, se procesarán los movimientos y no se podrá editar este reporte. Se generará el PDF automáticamente.")) return;
+
                     try {
                         const batch = writeBatch(db);
                         const dateIso = new Date().toISOString();
@@ -640,7 +691,7 @@
                         pdf.setFillColor(240, 240, 240); pdf.rect(14, 35, 180, 15, 'F');
                         pdf.text(`Encontrados: ${scannedRef.current.size} | Faltantes: ${missing.length}`, 20, 44);
 
-                        pdf.autoTable({ startY: 55, head: [['IMEI', 'Modelo', 'Estado']], body: scanLog.map(s => [s.imei, s.model, s.status === 'TRANSFER' ? 'TRASLADO (ENTRADA)' : s.status]) });
+                        pdf.autoTable({ startY: 55, head: [['IMEI', 'Modelo', 'Estado']], body: scanLog.map(s => [s.imei, s.model, s.status === 'TRASLADO' ? 'TRASLADO (ENTRADA)' : s.status]) });
                         
                         if(missing.length > 0) {
                             pdf.text("Faltantes / Novedades", 14, pdf.lastAutoTable.finalY + 10);
@@ -677,7 +728,7 @@
                                 <div className="absolute left-3 top-4 text-gray-400"><Icon name="barcode"/></div>
                             </form>
                         </div>
-                        <div className="bg-white rounded shadow overflow-hidden table-container">
+                        <div className="bg-white rounded shadow table-container">
                             <table className="w-full text-sm">
                                 <thead className="bg-gray-100 text-xs uppercase"><tr><th className="p-3 text-left">Modelo</th><th className="p-3 text-left">IMEI</th><th className="p-3">Estado</th><th className="p-3"></th></tr></thead>
                                 <tbody>
@@ -685,7 +736,7 @@
                                         <tr key={l.imei} className="border-b">
                                             <td className="p-3 font-bold">{l.model}</td>
                                             <td className="p-3 font-mono text-gray-600">{l.imei}</td>
-                                            <td className="p-3 text-xs">{l.status==='OK'?<span className="text-green-600 font-bold">OK</span>:<span className="text-red-500">{l.status}</span>}</td>
+                                            <td className="p-3 text-xs">{l.status==='OK'?<span className="text-green-600 font-bold">OK</span>:<span className="text-red-500 font-bold">{l.detail}</span>}</td>
                                             <td className="p-3 text-right">
                                                 <button type="button" onClick={() => removeScan(l.imei)} className="bg-red-500 text-white px-3 py-1 rounded text-xs">Eliminar</button>
                                             </td>
@@ -730,10 +781,19 @@
 
             const App = () => {
                 const [authReady, setAuthReady] = useState(false);
-                const [dataReady, setDataReady] = useState(false); // NUEVO ESTADO DE CARGA
+                const [dataReady, setDataReady] = useState(false); 
                 const [user, setUser] = useState(null);
                 const [view, setView] = useState('login');
                 const [data, setData] = useState({advisors:[], stores:[], inventory:[]});
+
+                // Temporizador de 90 minutos para recargar la página
+                useEffect(() => {
+                    const timer = setTimeout(() => {
+                        alert("La sesión ha expirado por seguridad (90 min). La página se recargará.");
+                        window.location.reload();
+                    }, 90 * 60 * 1000); // 90 minutos
+                    return () => clearTimeout(timer);
+                }, []);
 
                 useEffect(() => {
                     const initAuth = async () => {
@@ -748,12 +808,11 @@
                     return () => sub();
                 }, []);
 
-                // Efecto modificado para controlar la carga de datos
                 useEffect(() => {
                     if (authReady) {
                         refresh();
                     }
-                }, [authReady]); // Ejecutar siempre que auth esté listo
+                }, [authReady]); 
 
                 const refresh = async () => {
                     try {
@@ -765,11 +824,10 @@
                         setData({ advisors: adv.docs.map(d=>({id:d.id, ...d.data()})), stores: sto.docs.map(d=>({id:d.id, ...d.data()})), inventory: inv.docs.map(d=>({id:d.id, ...d.data()})) });
                     } catch(e) { console.error(e); }
                     finally {
-                        setDataReady(true); // DESBLOQUEAR PANTALLA SOLO AL FINALIZAR
+                        setDataReady(true); 
                     }
                 };
 
-                // Bloqueo Global: Si no hay datos, muestra carga
                 if(!authReady || !dataReady) return (
                     <div style={{height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: '#666'}}>
                         <div className="animate-spin h-8 w-8 border-4 border-blue-600 rounded-full border-t-transparent mx-auto mb-4"></div>
