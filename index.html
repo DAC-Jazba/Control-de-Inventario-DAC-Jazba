@@ -5,10 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DAC Jazba - Control de Inventario</title>
     
+    <!-- Eliminar la advertencia 404 del favicon -->
+    <link rel="icon" href="data:,">
+    
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Fijamos Babel a la versión 7 estable para evitar el bug de importación de la versión 8 -->
+    <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -51,7 +56,7 @@
 </head>
 <body>
     <div id="root">
-        <div style="height: 100vh; display: flex; align-items: center; justify-content: center; color: #666;">
+        <div style="height: 100vh; display: flex; align-items: center; justify-content: center; color: #666; flex-direction: column;">
             <div style="text-align: center;">
                 <div class="animate-spin h-8 w-8 border-4 border-blue-600 rounded-full border-t-transparent mx-auto mb-4"></div>
                 <p id="loading-text">Cargando sistema...</p>
@@ -63,17 +68,19 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // --- Hashing para Password ---
         async function hashPassword(message) {
             const msgBuffer = new TextEncoder().encode(message);
             const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
             return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
+        // --- Bootstrap ---
         const bootstrap = async () => {
             if (!window.firebase) await new Promise(resolve => window.addEventListener('firebase-ready', resolve));
-            const { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, deleteDoc, writeBatch, serverTimestamp, query, orderBy, limit, where } = window.firebase;
+            const { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, deleteDoc, updateDoc, writeBatch, serverTimestamp, query, orderBy, limit, where } = window.firebase;
 
-            // --- CONFIGURACIÓN FIREBASE ---
+            // --- CONFIGURACIÓN FIREBASE PARA GITHUB/HOSTING ---
             let firebaseConfig;
             try {
                 if (typeof __firebase_config !== 'undefined') {
@@ -84,7 +91,7 @@
             } catch (e) {
                 console.warn("Usando configuración manual.");
                 firebaseConfig = {
-  apiKey: "AIzaSyAoQV-Td9bA2cDGo2cNYGYhfrZdlF9U8wE",
+                    apiKey: "AIzaSyAoQV-Td9bA2cDGo2cNYGYhfrZdlF9U8wE",
   authDomain: "control-inventario-dac-jazba.firebaseapp.com",
   projectId: "control-inventario-dac-jazba",
   storageBucket: "control-inventario-dac-jazba.firebasestorage.app",
@@ -104,6 +111,7 @@
             const db = getFirestore(app);
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'jazba-inventory-v2';
 
+            // --- Componente Icono INTEGRADO ---
             const Icon = ({ name, size = 20, className = "" }) => {
                 const svgs = {
                     'box': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>,
@@ -116,7 +124,9 @@
                     'file-down': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>,
                     'alert-triangle': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
                     'barcode': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 5v14"/><path d="M8 5v14"/><path d="M12 5v14"/><path d="M17 5v14"/><path d="M21 5v14"/></svg>,
-                    'download': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    'download': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+                    'arrow-right-left': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>,
+                    'plus': <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 };
                 return svgs[name] || null;
             };
@@ -143,43 +153,30 @@
             // --- LOGIN ---
             const LoginScreen = ({ onLoginAdmin, onStartScan }) => {
                 const [mode, setMode] = useState('menu'); 
-                const [pass, setPass] = useState('');
+                const [adminUser, setAdminUser] = useState('');
+                const [adminPass, setAdminPass] = useState('');
                 const [loading, setLoading] = useState(false);
-                const [resetConfirm, setResetConfirm] = useState(false);
 
                 const checkPass = async (e) => {
                     e.preventDefault();
                     setLoading(true);
                     try {
-                        const hash = await hashPassword(pass);
+                        const hash = await hashPassword(adminPass);
                         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'system_settings', 'security');
                         const snap = await getDoc(docRef);
                         
                         if (!snap.exists()) {
-                            await setDoc(docRef, { admin_hash: hash });
-                            alert("Contraseña creada exitosamente.");
+                            // Creación inicial si no existe
+                            await setDoc(docRef, { admin_user: adminUser, admin_hash: hash });
+                            alert("Usuario y Contraseña de Administrador creados exitosamente.");
                             onLoginAdmin();
-                        } else if (snap.data().admin_hash === hash) {
+                        } else if (snap.data().admin_user === adminUser && snap.data().admin_hash === hash) {
                             onLoginAdmin();
                         } else {
-                            alert("Contraseña incorrecta.");
+                            alert("Usuario o contraseña incorrectos.");
                         }
                     } catch (err) { alert(err.message); }
                     setLoading(false);
-                };
-
-                const handleReset = async () => {
-                    if (!resetConfirm) {
-                        setResetConfirm(true);
-                        setTimeout(() => setResetConfirm(false), 3000);
-                        return;
-                    }
-                    try {
-                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'system_settings', 'security'));
-                        alert("Sistema restablecido. Ingresa una nueva contraseña.");
-                        setResetConfirm(false);
-                        setPass('');
-                    } catch (e) { alert("Error: " + e.message); }
                 };
 
                 if (mode === 'menu') return (
@@ -197,24 +194,27 @@
                 return (
                     <div className="flex justify-center pt-10">
                         <Card className="w-full max-w-md">
-                            <button onClick={() => setMode('menu')} className="mb-4 text-gray-400"><Icon name="arrow-left"/></button>
-                            <h2 className="text-xl font-bold mb-4 text-center">Acceso Admin</h2>
+                            <button onClick={() => setMode('menu')} className="mb-4 text-gray-400 hover:text-blue-600"><Icon name="arrow-left"/></button>
+                            <h2 className="text-xl font-bold mb-4 text-center text-gray-800">Acceso Admin</h2>
                             <form onSubmit={checkPass} className="space-y-4">
-                                <input type="password" required autoFocus className="w-full p-2 border rounded" placeholder="Contraseña..." value={pass} onChange={e=>setPass(e.target.value)}/>
-                                <Button type="submit" className="w-full" disabled={loading}>{loading ? '...' : 'Ingresar'}</Button>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Usuario</label>
+                                    <input type="text" required autoFocus className="w-full p-2 border rounded bg-gray-50" placeholder="Ej: admin_jazba" value={adminUser} onChange={e=>setAdminUser(e.target.value)}/>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">Contraseña</label>
+                                    <input type="password" required className="w-full p-2 border rounded bg-gray-50" placeholder="••••••••" value={adminPass} onChange={e=>setAdminPass(e.target.value)}/>
+                                </div>
+                                <Button type="submit" className="w-full" disabled={loading}>{loading ? 'Verificando...' : 'Ingresar'}</Button>
                             </form>
-                            <div className="mt-6 pt-6 border-t text-center">
-                                <button onClick={handleReset} className={`text-xs ${resetConfirm ? 'text-white bg-red-500 p-2 rounded font-bold' : 'text-red-400 hover:underline'}`}>
-                                    {resetConfirm ? "¿CONFIRMAR RESTABLECER?" : "Olvidé Contraseña / Restablecer"}
-                                </button>
-                            </div>
+                            {/* Eliminado el botón público de recuperar contraseña por seguridad */}
                         </Card>
                     </div>
                 );
             };
 
             // --- ADMIN DASHBOARD ---
-            const Dashboard = ({ advisors, stores, masterInventory, logout, refreshData }) => {
+            const Dashboard = ({ advisors, stores, categories, masterInventory, logout, refreshData }) => {
                 const [tab, setTab] = useState('inventory');
                 const [file, setFile] = useState(null);
                 const [uploadStore, setUploadStore] = useState('');
@@ -222,12 +222,32 @@
                 const [history, setHistory] = useState([]);
                 const [lastUpload, setLastUpload] = useState(null);
                 
+                // Form Manual State
+                const [manualItem, setManualItem] = useState({ imei: '', model: '', store: '', category: '' });
+
+                // Transfer State
+                const [transferImei, setTransferImei] = useState('');
+                const [transferItem, setTransferItem] = useState(null);
+                const [transferDest, setTransferDest] = useState('');
+
+                // Cambiar Credenciales Admin
+                const [newAdminUser, setNewAdminUser] = useState('');
+                const [newAdminPass, setNewAdminPass] = useState('');
+
                 const [confirmUndo, setConfirmUndo] = useState(false);
                 const [confirmDeleteId, setConfirmDeleteId] = useState(null); 
                 const [deletingId, setDeletingId] = useState(null); 
                 const [deleteAllConfirm, setDeleteAllConfirm] = useState(false); 
 
-                const tabNames = { inventory: 'Inventario', history: 'Historial', advisors: 'Asesores', stores: 'Tiendas', settings: 'Configuración' };
+                const tabNames = { 
+                    inventory: 'Inventario', 
+                    transfers: 'Traslados',
+                    history: 'Historial', 
+                    advisors: 'Asesores', 
+                    stores: 'Tiendas', 
+                    categories: 'Categorías',
+                    settings: 'Configuración' 
+                };
 
                 useEffect(() => { 
                     if (tab === 'history') loadHistory(); 
@@ -247,25 +267,26 @@
                     else setLastUpload(null);
                 };
 
-                // --- EXPORTAR EXCEL ---
                 const handleExportExcel = () => {
                     if (!masterInventory || masterInventory.length === 0) {
                         alert("No hay datos para exportar.");
                         return;
                     }
+                    // Sort items by category before export
+                    const sortedItems = [...masterInventory].sort((a, b) => (a.category || '').localeCompare(b.category || ''));
                     
                     const wb = XLSX.utils.book_new();
                     const wsData = [
-                        ["IMEI", "Modelo", "Tienda", "Estado", "Fecha Registro"], // Encabezados
-                        ...masterInventory.map(item => [
-                            item.imei,
-                            item.model,
-                            item.store,
+                        ["IMEI", "Modelo", "Categoría", "Tienda", "Estado", "Fecha Registro"],
+                        ...sortedItems.map(item => [
+                            item.imei, 
+                            item.model, 
+                            item.category || 'Sin Categoría',
+                            item.store, 
                             item.status === 'active' ? 'Activo' : item.status,
                             item.addedAt ? new Date(item.addedAt.seconds * 1000).toLocaleDateString() : '-'
                         ])
                     ];
-                    
                     const ws = XLSX.utils.aoa_to_sheet(wsData);
                     XLSX.utils.book_append_sheet(wb, ws, "Inventario Completo");
                     XLSX.writeFile(wb, `Inventario_Jazba_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -279,34 +300,71 @@
                         const batch = writeBatch(db);
                         const batchId = Date.now().toString(); 
                         let count = 0;
-                        
                         for (let i = 1; i < rows.length; i++) {
                             if (rows[i][0]) {
                                 const imei = String(rows[i][0]).trim();
                                 const model = rows[i][1] ? String(rows[i][1]).trim() : "Desconocido";
+                                const category = rows[i][2] ? String(rows[i][2]).trim() : "Sin Categoría"; // Leer Columna C
                                 const ref = doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', imei);
                                 batch.set(ref, { 
-                                    imei, model, store: uploadStore, status: 'active', 
+                                    imei, model, category, store: uploadStore, status: 'active', 
                                     addedAt: serverTimestamp(),
                                     batchId: batchId 
                                 });
                                 count++;
                             }
                         }
-
                         const logRef = doc(db, 'artifacts', appId, 'public', 'data', 'upload_logs', batchId);
-                        batch.set(logRef, {
-                            timestamp: serverTimestamp(),
-                            count: count,
-                            storeName: uploadStore,
-                            fileName: file.name
-                        });
-
+                        batch.set(logRef, { timestamp: serverTimestamp(), count: count, storeName: uploadStore, fileName: file.name });
                         await batch.commit();
                         alert(`Cargados ${count} equipos a ${uploadStore}`);
                         setFile(null);
                         refreshData();
                         loadLastUploadInfo();
+                    } catch (e) { alert("Error al subir archivo: Asegúrate de que el formato sea correcto (Columna A: IMEI, Col B: Modelo, Col C: Categoría)."); }
+                    setUploading(false);
+                };
+
+                const handleAddManualItem = async (e) => {
+                    e.preventDefault();
+                    const { imei, model, store, category } = manualItem;
+                    if(!imei || !model || !store) return alert("Complete los campos obligatorios.");
+                    setUploading(true);
+                    try {
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', imei.trim()), {
+                            imei: imei.trim(),
+                            model: model.trim(),
+                            category: category || 'Sin Categoría',
+                            store: store,
+                            status: 'active',
+                            addedAt: serverTimestamp()
+                        });
+                        alert("Equipo agregado manualmente.");
+                        setManualItem({ imei: '', model: '', store: '', category: '' });
+                        refreshData();
+                    } catch (err) { alert(err.message); }
+                    setUploading(false);
+                };
+
+                const handleSearchTransfer = () => {
+                    const item = masterInventory.find(i => i.imei === transferImei.trim());
+                    if (item) setTransferItem(item);
+                    else { alert("IMEI no encontrado en el inventario activo."); setTransferItem(null); }
+                };
+
+                const executeTransfer = async () => {
+                    if (!transferItem || !transferDest) return;
+                    if (transferItem.store === transferDest) return alert("El equipo ya está en esa tienda.");
+                    setUploading(true);
+                    try {
+                        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', transferItem.imei), { 
+                            store: transferDest 
+                        });
+                        alert(`Equipo ${transferItem.imei} trasladado exitosamente a ${transferDest}.`);
+                        setTransferImei('');
+                        setTransferItem(null);
+                        setTransferDest('');
+                        refreshData();
                     } catch (e) { alert("Error: " + e.message); }
                     setUploading(false);
                 };
@@ -350,9 +408,10 @@
                         const batch = writeBatch(db);
                         if (recordData.missingItems && recordData.missingItems.length > 0) {
                             recordData.missingItems.forEach(item => {
-                                if (['vendido', 'traslado'].includes(item.status)) {
-                                    const invRef = doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', item.imei);
-                                    batch.set(invRef, { imei: item.imei, model: item.model, store: recordData.storeName, status: 'active', restoredAt: serverTimestamp() });
+                                if (item.status === 'vendido') {
+                                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', item.imei), { 
+                                        imei: item.imei, model: item.model, category: item.category || 'Sin Categoría', store: recordData.storeName, status: 'active', restoredAt: serverTimestamp() 
+                                    });
                                 }
                             });
                         }
@@ -368,44 +427,64 @@
                         setTimeout(() => setDeleteAllConfirm(false), 4000);
                         return;
                     }
-
                     setUploading(true);
                     try {
                         const collections = ['inventory_master', 'audit_records', 'upload_logs'];
-                        
                         for (const collName of collections) {
                             const q = query(collection(db, 'artifacts', appId, 'public', 'data', collName));
                             const snapshot = await getDocs(q);
-                            
                             const batchSize = 400;
                             let batch = writeBatch(db);
                             let count = 0;
-
                             for (const doc of snapshot.docs) {
                                 batch.delete(doc.ref);
                                 count++;
-                                if (count >= batchSize) {
-                                    await batch.commit();
-                                    batch = writeBatch(db);
-                                    count = 0;
-                                }
+                                if (count >= batchSize) { await batch.commit(); batch = writeBatch(db); count = 0; }
                             }
                             if (count > 0) await batch.commit();
                         }
-                        
                         alert("Sistema restablecido correctamente.");
                         refreshData();
                         loadLastUploadInfo();
                         loadHistory();
                         setDeleteAllConfirm(false);
-                    } catch (e) {
-                        alert("Error al borrar: " + e.message);
-                    }
+                    } catch (e) { alert("Error al borrar: " + e.message); }
                     setUploading(false);
+                };
+
+                const handleUpdateAdmin = async (e) => {
+                    e.preventDefault();
+                    if(!newAdminUser || !newAdminPass) return alert("Complete usuario y contraseña.");
+                    try {
+                        const hash = await hashPassword(newAdminPass);
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'system_settings', 'security'), {
+                            admin_user: newAdminUser,
+                            admin_hash: hash
+                        });
+                        alert("Credenciales de administrador actualizadas correctamente.");
+                        setNewAdminUser('');
+                        setNewAdminPass('');
+                    } catch(err) {
+                        alert("Error: " + err.message);
+                    }
                 };
 
                 const addItem = async (coll, field, val) => {
                     if(val) { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', coll), { name: val }); refreshData(); }
+                };
+                
+                const addAdvisor = async (e) => {
+                    e.preventDefault();
+                    const name = e.target.advName.value;
+                    const pass = e.target.advPass.value;
+                    if(!name || !pass) return alert("Nombre y contraseña son obligatorios.");
+                    
+                    try {
+                        const hash = await hashPassword(pass);
+                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'advisors'), { name, passHash: hash });
+                        e.target.reset();
+                        refreshData();
+                    } catch (err) { alert("Error: " + err.message); }
                 };
 
                 const handleDeleteGeneric = async (coll, id) => {
@@ -414,7 +493,6 @@
                         setTimeout(() => setDeletingId(null), 3000);
                         return;
                     }
-                    
                     try {
                         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', coll, id));
                         setDeletingId(null);
@@ -436,10 +514,13 @@
                     let currentY = 65;
                     if (record.scannedItemsList && record.scannedItemsList.length > 0) {
                         doc.setFontSize(12); doc.setTextColor(0, 100, 0); doc.text("1. Equipos Escaneados", 14, 60); doc.setTextColor(0, 0, 0);
+                        
+                        const sortedScanned = [...record.scannedItemsList].sort((a,b) => (a.category||'').localeCompare(b.category||''));
+                        
                         doc.autoTable({
                             startY: 65,
-                            head: [['IMEI', 'Modelo', 'Estado']],
-                            body: record.scannedItemsList.map(s => [s.imei, s.model, s.status === 'TRASLADO' ? 'TRASLADO (ENT)' : s.status]),
+                            head: [['Categoría', 'IMEI', 'Modelo', 'Estado']],
+                            body: sortedScanned.map(s => [s.category || 'Sin Categoría', s.imei, s.model, s.status === 'TRASLADO' ? 'TRASLADO (ENT)' : s.status]),
                             theme: 'striped',
                             headStyles: { fillColor: [46, 204, 113] }
                         });
@@ -448,11 +529,18 @@
 
                     if (record.missingItems && record.missingItems.length > 0) {
                         doc.setFontSize(12); doc.setTextColor(200, 0, 0); doc.text("2. Equipos Faltantes", 14, currentY); doc.setTextColor(0, 0, 0);
+                        
+                        const sortedMissing = [...record.missingItems].sort((a,b) => (a.category||'').localeCompare(b.category||''));
+
                         const missingRows = [];
-                        record.missingItems.forEach(i => missingRows.push([i.imei, i.model, i.status, i.description||'-']));
+                        sortedMissing.forEach(i => {
+                            let detalle = i.description || '-';
+                            if (i.status === 'traslado' && i.destinationStore) detalle = `A: ${i.destinationStore}. ${detalle}`;
+                            missingRows.push([i.category || 'Sin Categoría', i.imei, i.model, i.status, detalle]);
+                        });
                         doc.autoTable({ 
                             startY: currentY + 5, 
-                            head: [['IMEI', 'Modelo', 'Motivo', 'Detalle']], 
+                            head: [['Categoría', 'IMEI', 'Modelo', 'Motivo', 'Detalle']], 
                             body: missingRows,
                             theme: 'striped',
                             headStyles: { fillColor: [231, 76, 60] }
@@ -470,59 +558,109 @@
                         <div className="bg-white rounded-lg shadow p-4">
                             <div className="flex border-b mb-4 overflow-x-auto">
                                 {Object.keys(tabNames).map(k => (
-                                    <button key={k} onClick={()=>setTab(k)} className={`px-4 py-2 ${tab===k?'border-b-2 border-blue-600 text-blue-600':'text-gray-500'}`}>{tabNames[k]}</button>
+                                    <button key={k} onClick={()=>setTab(k)} className={`px-4 py-2 whitespace-nowrap ${tab===k?'border-b-2 border-blue-600 text-blue-600 font-bold':'text-gray-500'}`}>{tabNames[k]}</button>
                                 ))}
                             </div>
 
                             {tab === 'inventory' && (
-                                <div>
-                                    {stores.length === 0 ? (
-                                        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4 flex items-center gap-2">
-                                            <Icon name="alert-triangle" size={24} />
-                                            <div><p className="font-bold">¡Atención!</p><p className="text-sm">Crea una tienda primero.</p></div>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center bg-gray-50 p-3 rounded border">
+                                        <div className="font-bold text-gray-700">Total en Sistema: {masterInventory.length} equipos</div>
+                                        <Button onClick={handleExportExcel} variant="successOutline" className="text-sm py-1"><Icon name="download" size={16}/> Exportar Excel</Button>
+                                    </div>
+
+                                    {/* Carga por Lote (Excel) */}
+                                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                        <h3 className="font-bold mb-2 text-blue-800">Carga Masiva (Excel)</h3>
+                                        <p className="text-xs text-blue-600 mb-3">Formato requerido: Columna A (IMEI) | Columna B (Modelo) | Columna C (Categoría - Opcional)</p>
+                                        <div className="flex flex-col md:flex-row gap-2">
+                                            <select className="p-2 border rounded bg-white" value={uploadStore} onChange={e=>setUploadStore(e.target.value)}>
+                                                <option value="">Seleccionar Tienda...</option>
+                                                {stores.map(s=> <option key={s.id} value={s.name}>{s.name}</option>)}
+                                            </select>
+                                            <input type="file" onChange={e=>setFile(e.target.files[0])} className="p-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-white file:text-blue-700 hover:file:bg-blue-50"/>
+                                            <Button onClick={handleUpload} disabled={uploading}>Subir Archivo</Button>
                                         </div>
-                                    ) : (
-                                        <div className="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-200">
-                                            <div className="flex justify-between items-start mb-4">
-                                                <h3 className="font-bold">Gestión de Inventario</h3>
-                                                <Button onClick={handleExportExcel} variant="successOutline" className="text-sm py-1">
-                                                    <Icon name="download" size={16}/> Exportar Excel
-                                                </Button>
+                                        {lastUpload && (
+                                            <div className="mt-4 pt-4 border-t border-blue-200 flex justify-between items-center text-sm">
+                                                <span className="text-blue-800">
+                                                    Última carga: <strong>{lastUpload.fileName}</strong> ({lastUpload.count} items)
+                                                </span>
+                                                <button onClick={handleUndoLastUpload} disabled={uploading} className={`font-bold flex items-center gap-1 transition-colors px-3 py-1 rounded ${confirmUndo ? 'bg-red-600 text-white' : 'text-red-500 hover:text-red-700 underline'}`}>
+                                                    <Icon name="undo-2" size={14}/> {confirmUndo ? "¿CONFIRMAR?" : "Deshacer Carga"}
+                                                </button>
                                             </div>
-                                            <div className="flex flex-col md:flex-row gap-2">
-                                                <select className="p-2 border rounded" value={uploadStore} onChange={e=>setUploadStore(e.target.value)}>
-                                                    <option value="">Seleccionar Tienda...</option>
-                                                    {stores.map(s=> <option key={s.id} value={s.name}>{s.name}</option>)}
-                                                </select>
-                                                <input type="file" onChange={e=>setFile(e.target.files[0])} className="p-1 block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-white file:text-blue-700 hover:file:bg-blue-50"/>
-                                                <Button onClick={handleUpload} disabled={uploading}>Subir</Button>
-                                            </div>
-                                            {lastUpload && (
-                                                <div className="mt-4 pt-4 border-t border-blue-200 flex justify-between items-center text-sm">
-                                                    <span className="text-blue-800">
-                                                        Última carga: <strong>{lastUpload.fileName}</strong> ({lastUpload.count} items) en {lastUpload.storeName}
-                                                    </span>
-                                                    <button 
-                                                        onClick={handleUndoLastUpload} 
-                                                        disabled={uploading} 
-                                                        className={`font-bold flex items-center gap-1 transition-colors px-3 py-1 rounded ${confirmUndo ? 'bg-red-600 text-white' : 'text-red-500 hover:text-red-700 underline'}`}
-                                                    >
-                                                        <Icon name="undo-2" size={14}/> {confirmUndo ? "¿CONFIRMAR?" : "Deshacer Carga"}
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                    <div className="overflow-x-auto table-container">
+                                        )}
+                                    </div>
+
+                                    {/* Ingreso Manual */}
+                                    <div className="bg-white p-4 rounded-lg border shadow-sm">
+                                        <h3 className="font-bold mb-2 text-gray-700">Agregar Equipo Manual</h3>
+                                        <form onSubmit={handleAddManualItem} className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                                            <input required placeholder="IMEI..." className="border p-2 rounded" value={manualItem.imei} onChange={e=>setManualItem({...manualItem, imei: e.target.value})}/>
+                                            <input required placeholder="Modelo..." className="border p-2 rounded" value={manualItem.model} onChange={e=>setManualItem({...manualItem, model: e.target.value})}/>
+                                            <select className="border p-2 rounded bg-gray-50" value={manualItem.category} onChange={e=>setManualItem({...manualItem, category: e.target.value})}>
+                                                <option value="">Categoría (Opcional)</option>
+                                                {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                            </select>
+                                            <select required className="border p-2 rounded bg-gray-50" value={manualItem.store} onChange={e=>setManualItem({...manualItem, store: e.target.value})}>
+                                                <option value="">Tienda Destino...</option>
+                                                {stores.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                            </select>
+                                            <Button type="submit" disabled={uploading}><Icon name="plus" size={16}/> Agregar</Button>
+                                        </form>
+                                    </div>
+
+                                    {/* Tabla de Inventario */}
+                                    <div className="overflow-x-auto table-container mt-4">
                                         <table className="min-w-full text-sm text-left">
-                                            <thead className="bg-gray-100 text-xs uppercase"><tr><th className="px-4 py-2">Tienda</th><th className="px-4 py-2">Modelo</th><th className="px-4 py-2">IMEI</th></tr></thead>
+                                            <thead className="bg-gray-100 text-xs uppercase"><tr><th className="px-4 py-2">Tienda</th><th className="px-4 py-2">Categoría</th><th className="px-4 py-2">Modelo</th><th className="px-4 py-2">IMEI</th></tr></thead>
                                             <tbody>
                                                 {masterInventory.map(i => (
-                                                    <tr key={i.imei} className="border-b"><td className="px-4 py-2 font-bold text-gray-600">{i.store || '-'}</td><td className="px-4 py-2">{i.model}</td><td className="px-4 py-2 font-mono">{i.imei}</td></tr>
+                                                    <tr key={i.imei} className="border-b hover:bg-gray-50">
+                                                        <td className="px-4 py-2 font-bold text-gray-600">{i.store || '-'}</td>
+                                                        <td className="px-4 py-2 text-gray-500 text-xs">{i.category || 'Sin Categoría'}</td>
+                                                        <td className="px-4 py-2">{i.model}</td>
+                                                        <td className="px-4 py-2 font-mono">{i.imei}</td>
+                                                    </tr>
                                                 ))}
                                             </tbody>
                                         </table>
                                     </div>
+                                </div>
+                            )}
+
+                            {tab === 'transfers' && (
+                                <div className="max-w-lg mx-auto space-y-6 pt-4">
+                                    <div className="text-center mb-6">
+                                        <Icon name="arrow-right-left" size={40} className="text-blue-600 mx-auto mb-2"/>
+                                        <h2 className="text-xl font-bold">Traslado Directo Administrativo</h2>
+                                        <p className="text-sm text-gray-500">Mueve un equipo de una tienda a otra al instante.</p>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <input className="border p-3 rounded flex-1 text-lg" placeholder="Ingresar IMEI del equipo..." value={transferImei} onChange={e=>setTransferImei(e.target.value)}/>
+                                        <Button onClick={handleSearchTransfer}>Buscar</Button>
+                                    </div>
+
+                                    {transferItem && (
+                                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 fade-in">
+                                            <div className="mb-4">
+                                                <p className="text-sm text-blue-600">Equipo Encontrado:</p>
+                                                <p className="font-bold text-lg">{transferItem.model} <span className="text-sm font-normal text-gray-500">({transferItem.category || 'Sin cat.'})</span></p>
+                                                <p className="font-mono text-gray-600">{transferItem.imei}</p>
+                                                <p className="mt-2 text-sm">Ubicación actual: <span className="font-bold text-red-600">{transferItem.store}</span></p>
+                                            </div>
+                                            <div className="border-t border-blue-200 pt-4">
+                                                <label className="block text-sm font-bold text-gray-700 mb-1">Mover a tienda:</label>
+                                                <select className="w-full p-2 border rounded mb-4" value={transferDest} onChange={e=>setTransferDest(e.target.value)}>
+                                                    <option value="">Seleccione destino...</option>
+                                                    {stores.filter(s => s.name !== transferItem.store).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                                </select>
+                                                <Button onClick={executeTransfer} disabled={!transferDest || uploading} className="w-full">Confirmar Traslado</Button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -539,10 +677,7 @@
                                             </div>
                                             <div className="flex gap-2">
                                                 <Button variant="outline" onClick={()=>generatePDF(h)}><Icon name="file-down" size={14}/></Button>
-                                                <button 
-                                                    onClick={()=>handleDeleteHistory(h.id)} 
-                                                    className={`p-2 rounded flex items-center transition-colors ${confirmDeleteId === h.id ? 'bg-red-600 text-white' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
-                                                >
+                                                <button onClick={()=>handleDeleteHistory(h.id)} className={`p-2 rounded flex items-center transition-colors ${confirmDeleteId === h.id ? 'bg-red-600 text-white' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}>
                                                     <Icon name={confirmDeleteId === h.id ? "check" : "trash-2"} size={16}/>
                                                     {confirmDeleteId === h.id && <span className="ml-1 text-xs">¿?</span>}
                                                 </button>
@@ -552,36 +687,24 @@
                                 </div>
                             )}
 
-                            {tab === 'settings' && (
-                                <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-                                    <h3 className="text-xl font-bold text-red-700 mb-4">Zona de Peligro</h3>
-                                    <p className="text-red-600 mb-6">Estas acciones son destructivas y no se pueden deshacer.</p>
-                                    
-                                    <button 
-                                        onClick={handleDeleteAllData}
-                                        disabled={uploading}
-                                        className={`font-bold py-3 px-6 rounded-lg shadow-lg flex items-center justify-center gap-2 mx-auto transition-colors disabled:opacity-50 ${deleteAllConfirm ? 'bg-red-800 text-white animate-pulse' : 'bg-red-600 hover:bg-red-700 text-white'}`}
-                                    >
-                                        <Icon name="trash-2" size={20} /> 
-                                        {uploading ? 'Borrando...' : (deleteAllConfirm ? '¿ESTÁS SEGURO? CONFIRMAR' : 'Borrar Todo (Equipos e Historial)')}
-                                    </button>
-                                </div>
-                            )}
-
-                            {(tab === 'advisors' || tab === 'stores') && (
+                            {tab === 'advisors' && (
                                 <div>
-                                    <form onSubmit={(e)=>{e.preventDefault(); addItem(tab, 'name', e.target.val.value); e.target.reset();}} className="flex gap-2 mb-4">
-                                        <input name="val" placeholder={`Nuevo...`} className="border p-2 rounded flex-1"/>
-                                        <Button type="submit">Agregar</Button>
-                                    </form>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {(tab==='advisors'?advisors:stores).map(i=>(
-                                            <div key={i.id} className="p-2 border rounded flex justify-between bg-gray-50 items-center">
-                                                <span>{i.name}</span>
-                                                <button 
-                                                    onClick={()=>handleDeleteGeneric(tab, i.id)} 
-                                                    className={`p-2 rounded transition-colors ${deletingId === i.id ? 'bg-red-600 text-white' : 'text-red-500 hover:bg-red-100'}`}
-                                                >
+                                    <div className="bg-blue-50 p-4 rounded-lg mb-4 border border-blue-200">
+                                        <h3 className="font-bold mb-2">Crear Nuevo Asesor</h3>
+                                        <form onSubmit={addAdvisor} className="flex flex-col md:flex-row gap-2">
+                                            <input name="advName" required placeholder="Nombre completo..." className="border p-2 rounded flex-1"/>
+                                            <input name="advPass" required type="password" placeholder="Crear contraseña..." className="border p-2 rounded flex-1"/>
+                                            <Button type="submit">Guardar Usuario</Button>
+                                        </form>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                        {advisors.map(i=>(
+                                            <div key={i.id} className="p-3 border rounded flex justify-between bg-white items-center shadow-sm">
+                                                <div>
+                                                    <div className="font-bold text-gray-700">{i.name}</div>
+                                                    <div className="text-xs text-green-600 flex items-center gap-1"><Icon name="lock" size={10}/> Acceso configurado</div>
+                                                </div>
+                                                <button onClick={()=>handleDeleteGeneric('advisors', i.id)} className={`p-2 rounded transition-colors ${deletingId === i.id ? 'bg-red-600 text-white' : 'text-red-500 hover:bg-red-100'}`}>
                                                     {deletingId === i.id ? '¿?' : <Icon name="trash-2" size={14}/>}
                                                 </button>
                                             </div>
@@ -589,6 +712,52 @@
                                     </div>
                                 </div>
                             )}
+
+                            {(tab === 'stores' || tab === 'categories') && (
+                                <div>
+                                    <form onSubmit={(e)=>{e.preventDefault(); addItem(tab, 'name', e.target.val.value); e.target.reset();}} className="flex gap-2 mb-4">
+                                        <input name="val" placeholder={`Nombre de ${tabNames[tab].slice(0,-1)}...`} className="border p-2 rounded flex-1"/>
+                                        <Button type="submit">Agregar</Button>
+                                    </form>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                        {(tab==='stores'?stores:categories).map(i=>(
+                                            <div key={i.id} className="p-2 border rounded flex justify-between bg-gray-50 items-center">
+                                                <span className="font-medium text-gray-700">{i.name}</span>
+                                                <button onClick={()=>handleDeleteGeneric(tab, i.id)} className={`p-2 rounded transition-colors ${deletingId === i.id ? 'bg-red-600 text-white' : 'text-red-500 hover:bg-red-100'}`}>
+                                                    {deletingId === i.id ? '¿?' : <Icon name="trash-2" size={14}/>}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {tab === 'settings' && (
+                                <div className="space-y-6">
+                                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                                        <h3 className="text-lg font-bold text-blue-800 mb-4"><Icon name="lock" className="inline mr-2"/>Cambiar Credenciales de Acceso</h3>
+                                        <form onSubmit={handleUpdateAdmin} className="flex flex-col md:flex-row gap-2">
+                                            <input required placeholder="Nuevo Usuario..." className="border p-2 rounded flex-1" value={newAdminUser} onChange={e=>setNewAdminUser(e.target.value)}/>
+                                            <input required type="password" placeholder="Nueva Contraseña..." className="border p-2 rounded flex-1" value={newAdminPass} onChange={e=>setNewAdminPass(e.target.value)}/>
+                                            <Button type="submit">Actualizar</Button>
+                                        </form>
+                                    </div>
+                                    
+                                    <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+                                        <h3 className="text-xl font-bold text-red-700 mb-4">Zona de Peligro</h3>
+                                        <p className="text-red-600 mb-6">Estas acciones son destructivas y no se pueden deshacer.</p>
+                                        <button 
+                                            onClick={handleDeleteAllData}
+                                            disabled={uploading}
+                                            className={`font-bold py-3 px-6 rounded-lg shadow-lg flex items-center justify-center gap-2 mx-auto transition-colors disabled:opacity-50 ${deleteAllConfirm ? 'bg-red-800 text-white animate-pulse' : 'bg-red-600 hover:bg-red-700 text-white'}`}
+                                        >
+                                            <Icon name="trash-2" size={20} /> 
+                                            {uploading ? 'Borrando...' : (deleteAllConfirm ? '¿ESTÁS SEGURO? CONFIRMAR' : 'Borrar Todo (Equipos e Historial)')}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                         </div>
                     </div>
                 );
@@ -598,6 +767,7 @@
             const Scanner = ({ advisors, stores, masterInventory, onBack, refreshData }) => {
                 const [step, setStep] = useState(1);
                 const [selAdv, setSelAdv] = useState('');
+                const [advPass, setAdvPass] = useState('');
                 const [selStore, setSelStore] = useState('');
                 
                 const scannedRef = useRef(new Set());
@@ -610,6 +780,25 @@
                 
                 const [missing, setMissing] = useState([]);
                 const blockedCodesRef = useRef(new Set());
+
+                const handleStartInventory = async (e) => {
+                    e.preventDefault();
+                    if (!selStore || !selAdv || !advPass) return alert("Complete todos los campos.");
+                    
+                    const advisor = advisors.find(a => a.id === selAdv);
+                    if (!advisor) return;
+
+                    if (advisor.passHash) {
+                        const hash = await hashPassword(advPass);
+                        if (hash !== advisor.passHash) {
+                            return alert("Contraseña de asesor incorrecta.");
+                        }
+                    } else {
+                        return alert("Tu usuario no tiene contraseña registrada. Pide al administrador que te elimine y vuelva a crear.");
+                    }
+                    
+                    setStep(2);
+                };
 
                 const handleScan = (code) => {
                     const imei = code.trim();
@@ -630,7 +819,14 @@
                             isTransfer = true; 
                         }
 
-                        const newItem = { imei, model: item ? item.model : 'DESCONOCIDO', status, detail, originStore: item ? item.store : null };
+                        const newItem = { 
+                            imei, 
+                            model: item ? item.model : 'DESCONOCIDO', 
+                            category: item ? (item.category || 'Sin Categoría') : 'Sin Categoría',
+                            status, 
+                            detail, 
+                            originStore: item ? item.store : null 
+                        };
 
                         setScanLog(prevLog => [newItem, ...prevLog]);
                         if (isTransfer) setTransfersIn(prevTrans => [...prevTrans, newItem]);
@@ -654,48 +850,101 @@
 
                 const finish = () => {
                     const missingList = masterInventory.filter(i => i.store === selStore && !scannedRef.current.has(i.imei));
-                    setMissing(missingList.map(i => ({...i, status: 'missing', reason: '', desc: ''})));
+                    setMissing(missingList.map(i => ({...i, status: 'missing', reason: '', desc: '', destinationStore: ''})));
                     setStep(3);
                 };
 
-                const saveAndExport = async () => {
-                    // Validación: Verificar que todos los faltantes tengan motivo seleccionado
-                    const pendingReasons = missing.some(m => m.status === 'missing');
-                    if (pendingReasons) {
-                        alert("⚠️ No se puede guardar: Hay equipos faltantes sin motivo seleccionado. Por favor justifique todos los faltantes.");
-                        return;
-                    }
+                const handleReasonChange = (index, value) => {
+                    const updated = [...missing];
+                    updated[index].status = value;
+                    setMissing(updated);
+                };
 
-                    if(!window.confirm("¿Estás seguro de finalizar? Al guardar, se procesarán los movimientos y no se podrá editar este reporte. Se generará el PDF automáticamente.")) return;
+                const handleDestinationChange = (index, value) => {
+                    const updated = [...missing];
+                    updated[index].destinationStore = value;
+                    setMissing(updated);
+                };
+
+                const handleDescriptionChange = (index, value) => {
+                    const updated = [...missing];
+                    updated[index].desc = value;
+                    setMissing(updated);
+                };
+
+                const saveAndExport = async () => {
+                    const pending = missing.some(m => m.status === 'missing');
+                    if (pending) return alert("⚠️ No se puede guardar: Hay equipos faltantes sin motivo seleccionado.");
+                    
+                    const pendingDest = missing.some(m => m.status === 'traslado' && !m.destinationStore);
+                    if (pendingDest) return alert("⚠️ No se puede guardar: Debes seleccionar la tienda destino para los traslados.");
+                    
+                    if(!window.confirm("¿Estás seguro de finalizar? Al guardar, se procesarán los movimientos en la base de datos y se generará el PDF.\n\nEsta acción es irreversible.")) return;
 
                     try {
                         const batch = writeBatch(db);
                         const dateIso = new Date().toISOString();
-                        const scannedItemsList = scanLog.map(s => ({ imei: s.imei, model: s.model, status: s.status, originStore: s.originStore || null }));
+                        
+                        const scannedItemsList = scanLog.map(s => ({ imei: s.imei, model: s.model, category: s.category, status: s.status, originStore: s.originStore || null }));
+                        const missingData = missing.map(m => ({ imei: m.imei, model: m.model, category: m.category, status: m.status, description: m.desc, destinationStore: m.destinationStore || null }));
 
                         const auditRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'audit_records'));
                         batch.set(auditRef, {
-                            date: dateIso, timestamp: serverTimestamp(), advisorName: selAdv, storeName: selStore, scannedCount: scannedRef.current.size,
-                            scannedItemsList, missingItems: missing.map(m => ({ imei: m.imei, model: m.model, status: m.status, description: m.desc })),
+                            date: dateIso, timestamp: serverTimestamp(), advisorName: advisors.find(a=>a.id===selAdv)?.name || selAdv, storeName: selStore, scannedCount: scannedRef.current.size,
+                            scannedItemsList, missingItems: missingData,
                             transfersIn: transfersIn.map(t => ({ imei: t.imei, model: t.model, originStore: t.originStore }))
                         });
 
+                        // Entradas
                         transfersIn.forEach(t => batch.update(doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', t.imei), { store: selStore }));
-                        missing.forEach(m => { if (['vendido', 'traslado'].includes(m.status)) batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', m.imei)); });
+                        
+                        // Salidas
+                        missing.forEach(m => { 
+                            if (m.status === 'vendido') {
+                                batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', m.imei)); 
+                            } else if (m.status === 'traslado' && m.destinationStore) {
+                                batch.update(doc(db, 'artifacts', appId, 'public', 'data', 'inventory_master', m.imei), { store: m.destinationStore });
+                            }
+                        });
 
                         await batch.commit();
                         
+                        // --- PDF GENERATION CON CATEGORIAS ---
                         const pdf = new jspdf.jsPDF();
+                        const advNameDisplay = advisors.find(a=>a.id===selAdv)?.name || selAdv;
                         pdf.setFontSize(18); pdf.text("Reporte Final - Inventario DAC Jazba", 14, 20);
-                        pdf.setFontSize(10); pdf.text(`Tienda: ${selStore} | Asesor: ${selAdv} | Fecha: ${new Date().toLocaleString()}`, 14, 30);
+                        pdf.setFontSize(10); pdf.text(`Tienda: ${selStore} | Asesor: ${advNameDisplay} | Fecha: ${new Date().toLocaleString()}`, 14, 30);
                         pdf.setFillColor(240, 240, 240); pdf.rect(14, 35, 180, 15, 'F');
                         pdf.text(`Encontrados: ${scannedRef.current.size} | Faltantes: ${missing.length}`, 20, 44);
 
-                        pdf.autoTable({ startY: 55, head: [['IMEI', 'Modelo', 'Estado']], body: scanLog.map(s => [s.imei, s.model, s.status === 'TRASLADO' ? 'TRASLADO (ENTRADA)' : s.status]) });
+                        let currentY = 55;
+                        if (scanLog.length > 0) {
+                            const sortedScanned = [...scanLog].sort((a,b) => (a.category||'').localeCompare(b.category||''));
+                            pdf.autoTable({ 
+                                startY: currentY, 
+                                head: [['Categoría', 'IMEI', 'Modelo', 'Estado']], 
+                                body: sortedScanned.map(s => [s.category, s.imei, s.model, s.status === 'TRASLADO' ? 'TRASLADO (ENTRADA)' : s.status]),
+                                theme: 'striped',
+                                headStyles: { fillColor: [46, 204, 113] }
+                            });
+                            currentY = pdf.lastAutoTable.finalY + 10;
+                        }
                         
                         if(missing.length > 0) {
-                            pdf.text("Faltantes / Novedades", 14, pdf.lastAutoTable.finalY + 10);
-                            pdf.autoTable({ startY: pdf.lastAutoTable.finalY + 15, head: [['IMEI', 'Modelo', 'Motivo', 'Detalle']], body: missing.map(m => [m.imei, m.model, m.status, m.desc || '-']) });
+                            pdf.text("Faltantes / Novedades", 14, currentY);
+                            const sortedMissing = [...missing].sort((a,b) => (a.category||'').localeCompare(b.category||''));
+                            const missingRows = sortedMissing.map(m => {
+                                let detalle = m.desc || '-';
+                                if (m.status === 'traslado' && m.destinationStore) detalle = `A: ${m.destinationStore}. ${detalle}`;
+                                return [m.category, m.imei, m.model, m.status, detalle];
+                            });
+                            pdf.autoTable({ 
+                                startY: currentY + 5, 
+                                head: [['Categoría', 'IMEI', 'Modelo', 'Motivo', 'Detalle']], 
+                                body: missingRows,
+                                theme: 'striped',
+                                headStyles: { fillColor: [231, 76, 60] }
+                            });
                         }
                         
                         pdf.save(`Inventario_${selStore}_${dateIso}.pdf`);
@@ -706,19 +955,38 @@
                 };
 
                 if (step === 1) return (
-                    <Card title="Configuración Inicial" className="max-w-md mx-auto mt-10">
-                        <div className="space-y-4">
-                            <div><label className="block text-sm font-bold text-gray-700">Tienda</label><select className="w-full p-2 border rounded mt-1" value={selStore} onChange={e=>setSelStore(e.target.value)}><option value="">Seleccione...</option>{stores.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}</select></div>
-                            <div><label className="block text-sm font-bold text-gray-700">Asesor</label><select className="w-full p-2 border rounded mt-1" value={selAdv} onChange={e=>setSelAdv(e.target.value)}><option value="">Seleccione...</option>{advisors.map(a=><option key={a.id} value={a.name}>{a.name}</option>)}</select></div>
-                            <div className="flex gap-2 mt-4"><Button variant="secondary" onClick={onBack} className="flex-1">Cancelar</Button><Button onClick={()=>setStep(2)} disabled={!selStore || !selAdv} className="flex-1">Iniciar</Button></div>
-                        </div>
+                    <Card title="Acceso Asesor" className="max-w-md mx-auto mt-10">
+                        <form onSubmit={handleStartInventory} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700">Tienda</label>
+                                <select required className="w-full p-2 border rounded mt-1" value={selStore} onChange={e=>setSelStore(e.target.value)}>
+                                    <option value="">Seleccione...</option>
+                                    {stores.map(s=><option key={s.id} value={s.name}>{s.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700">Asesor</label>
+                                <select required className="w-full p-2 border rounded mt-1" value={selAdv} onChange={e=>setSelAdv(e.target.value)}>
+                                    <option value="">Seleccione...</option>
+                                    {advisors.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700">Contraseña</label>
+                                <input required type="password" placeholder="Ingresa tu clave..." className="w-full p-2 border rounded mt-1" value={advPass} onChange={e=>setAdvPass(e.target.value)} />
+                            </div>
+                            <div className="flex gap-2 mt-4">
+                                <Button variant="secondary" onClick={onBack} className="flex-1" type="button">Cancelar</Button>
+                                <Button type="submit" className="flex-1">Iniciar</Button>
+                            </div>
+                        </form>
                     </Card>
                 );
 
                 if (step === 2) return (
-                    <div className="max-w-2xl mx-auto space-y-4">
+                    <div className="max-w-3xl mx-auto space-y-4">
                         <div className="bg-white p-4 rounded shadow flex justify-between items-center">
-                            <div><h2 className="font-bold text-lg">{selStore}</h2><p className="text-xs text-gray-500">{selAdv}</p></div>
+                            <div><h2 className="font-bold text-lg">{selStore}</h2><p className="text-xs text-gray-500">{advisors.find(a=>a.id===selAdv)?.name || ''}</p></div>
                             <div className="text-right"><div className="text-2xl font-bold text-blue-600">{scannedCount}</div><div className="text-xs text-gray-400">Escaneados</div></div>
                         </div>
                         <div className="flex gap-2">
@@ -734,11 +1002,14 @@
                                 <tbody>
                                     {scanLog.map((l) => (
                                         <tr key={l.imei} className="border-b">
-                                            <td className="p-3 font-bold">{l.model}</td>
+                                            <td className="p-3">
+                                                <div className="font-bold">{l.model}</div>
+                                                <div className="text-xs text-gray-400">{l.category}</div>
+                                            </td>
                                             <td className="p-3 font-mono text-gray-600">{l.imei}</td>
                                             <td className="p-3 text-xs">{l.status==='OK'?<span className="text-green-600 font-bold">OK</span>:<span className="text-red-500 font-bold">{l.detail}</span>}</td>
                                             <td className="p-3 text-right">
-                                                <button type="button" onClick={() => removeScan(l.imei)} className="bg-red-500 text-white px-3 py-1 rounded text-xs">Eliminar</button>
+                                                <button type="button" onClick={() => removeScan(l.imei)} className="bg-red-50 text-red-600 hover:bg-red-100 p-2 rounded"><Icon name="trash-2" size={16}/></button>
                                             </td>
                                         </tr>
                                     ))}
@@ -750,30 +1021,42 @@
                 );
 
                 if (step === 3) return (
-                    <div className="max-w-3xl mx-auto pb-20">
+                    <div className="max-w-4xl mx-auto pb-20">
                         <Card title="Resultados y Faltantes">
-                            {missing.length === 0 ? <div className="text-center py-8 bg-green-50 text-green-700 font-bold">¡Sin faltantes!</div> : (
+                            {missing.length === 0 ? <div className="text-center py-8 bg-green-50 text-green-700 font-bold">¡Sin faltantes! Todo correcto.</div> : (
                                 <div className="space-y-4">
-                                    <p className="text-sm text-gray-500">Equipos no escaneados en <strong>{selStore}</strong>:</p>
-                                    {missing.map((m, i) => (
-                                        <div key={m.imei} className="border p-3 rounded flex flex-col md:flex-row gap-2 bg-white shadow-sm">
-                                            <div className="flex-1"><div className="font-bold text-red-600">{m.model}</div><div className="font-mono text-xs">{m.imei}</div></div>
-                                            <div className="flex-1">
-                                                <select className="w-full border p-2 rounded bg-gray-50" value={m.status} onChange={e=>{
-                                                    const list = [...missing]; list[i].status = e.target.value; setMissing(list);
-                                                }}>
-                                                    <option value="missing">Seleccionar Motivo...</option>
-                                                    <option value="vendido">Vendido</option>
-                                                    <option value="traslado">Traslado</option>
-                                                    <option value="otro">Otro</option>
-                                                </select>
+                                    <p className="text-sm text-gray-500">Equipos no escaneados en <strong>{selStore}</strong>. Justifique el motivo de cada uno:</p>
+                                    <div className="table-container p-2">
+                                        {missing.map((m, i) => (
+                                            <div key={m.imei} className={`border p-3 rounded flex flex-col md:flex-row gap-3 bg-white shadow-sm mb-2 ${m.status==='missing' ? 'border-red-300 bg-red-50' : 'border-green-200'}`}>
+                                                <div className="flex-1">
+                                                    <div className="font-bold text-gray-800">{m.model}</div>
+                                                    <div className="text-xs text-gray-500">{m.category}</div>
+                                                    <div className="font-mono text-xs mt-1 text-blue-600">{m.imei}</div>
+                                                </div>
+                                                <div className="flex-1 space-y-2">
+                                                    <select className={`w-full border p-2 rounded ${m.status==='missing' ? 'border-red-400' : 'bg-gray-50'}`} value={m.status} onChange={e=>handleReasonChange(i, e.target.value)}>
+                                                        <option value="missing">Seleccionar Motivo...</option>
+                                                        <option value="vendido">Vendido</option>
+                                                        <option value="traslado">Trasladado a otra tienda</option>
+                                                    </select>
+                                                    
+                                                    {m.status === 'traslado' && (
+                                                        <select className="w-full border p-2 rounded bg-blue-50 border-blue-200 text-sm" value={m.destinationStore || ''} onChange={e=>handleDestinationChange(i, e.target.value)}>
+                                                            <option value="">¿A qué tienda se fue?</option>
+                                                            {stores.filter(s => s.name !== selStore).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                                                        </select>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <input placeholder="Observación (opcional)..." className="w-full border p-2 rounded" value={m.desc} onChange={e=>handleDescriptionChange(i, e.target.value)}/>
+                                                </div>
                                             </div>
-                                            <div className="flex-1"><input placeholder="Detalles..." className="w-full border p-2 rounded" value={m.desc} onChange={e=>{const list = [...missing]; list[i].desc = e.target.value; setMissing(list);}}/></div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
                             )}
-                            <div className="flex gap-2 mt-6"><Button variant="secondary" onClick={()=>setStep(2)}>Volver</Button><Button variant="success" onClick={saveAndExport} className="flex-1">Guardar y PDF</Button></div>
+                            <div className="flex gap-2 mt-6"><Button variant="secondary" onClick={()=>setStep(2)}>Volver a Escanear</Button><Button variant="success" onClick={saveAndExport} className="flex-1">Guardar y PDF</Button></div>
                         </Card>
                     </div>
                 );
@@ -784,14 +1067,14 @@
                 const [dataReady, setDataReady] = useState(false); 
                 const [user, setUser] = useState(null);
                 const [view, setView] = useState('login');
-                const [data, setData] = useState({advisors:[], stores:[], inventory:[]});
+                const [data, setData] = useState({advisors:[], stores:[], categories:[], inventory:[]});
 
                 // Temporizador de 90 minutos para recargar la página
                 useEffect(() => {
                     const timer = setTimeout(() => {
                         alert("La sesión ha expirado por seguridad (90 min). La página se recargará.");
                         window.location.reload();
-                    }, 90 * 60 * 1000); // 90 minutos
+                    }, 90 * 60 * 1000); 
                     return () => clearTimeout(timer);
                 }, []);
 
@@ -816,12 +1099,18 @@
 
                 const refresh = async () => {
                     try {
-                        const [adv, sto, inv] = await Promise.all([
+                        const [adv, sto, inv, cat] = await Promise.all([
                             getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'advisors')),
                             getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'stores')),
-                            getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'inventory_master'))
+                            getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'inventory_master')),
+                            getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'categories'))
                         ]);
-                        setData({ advisors: adv.docs.map(d=>({id:d.id, ...d.data()})), stores: sto.docs.map(d=>({id:d.id, ...d.data()})), inventory: inv.docs.map(d=>({id:d.id, ...d.data()})) });
+                        setData({ 
+                            advisors: adv.docs.map(d=>({id:d.id, ...d.data()})), 
+                            stores: sto.docs.map(d=>({id:d.id, ...d.data()})), 
+                            inventory: inv.docs.map(d=>({id:d.id, ...d.data()})),
+                            categories: cat.docs.map(d=>({id:d.id, ...d.data()}))
+                        });
                     } catch(e) { console.error(e); }
                     finally {
                         setDataReady(true); 
@@ -831,7 +1120,8 @@
                 if(!authReady || !dataReady) return (
                     <div style={{height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', color: '#666'}}>
                         <div className="animate-spin h-8 w-8 border-4 border-blue-600 rounded-full border-t-transparent mx-auto mb-4"></div>
-                        <p>Cargando sistema...</p>
+                        <p id="loading-text">Cargando sistema...</p>
+                        <p id="config-warning" style={{display: 'none', color: 'red', fontSize: '0.8rem', marginTop: '10px'}}>Falta configuración de Firebase</p>
                     </div>
                 );
 
@@ -839,7 +1129,7 @@
                     <div className="min-h-screen pb-10 max-w-5xl mx-auto p-4">
                         <nav className="flex justify-between items-center mb-6 border-b pb-4"><div className="flex items-center gap-2 font-bold text-xl text-slate-800"><Icon name="box"/> DAC JAZBA</div></nav>
                         {view === 'login' && <LoginScreen onLoginAdmin={()=>{setView('dashboard');}} onStartScan={()=>setView('scan')} />}
-                        {view === 'dashboard' && <Dashboard advisors={data.advisors} stores={data.stores} masterInventory={data.inventory} logout={()=>{setView('login');}} refreshData={refresh}/>}
+                        {view === 'dashboard' && <Dashboard advisors={data.advisors} stores={data.stores} categories={data.categories} masterInventory={data.inventory} logout={()=>{setView('login');}} refreshData={refresh}/>}
                         {view === 'scan' && <Scanner advisors={data.advisors} stores={data.stores} masterInventory={data.inventory} onBack={()=>{setView('login'); refresh();}} refreshData={refresh}/>}
                     </div>
                 );
